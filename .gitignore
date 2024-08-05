@@ -1,0 +1,8 @@
+*.cmake
+*.ninja*
+.vs/
+CMakeCache.txt
+CMakeFiles/
+Makefile
+Testing/
+out/
