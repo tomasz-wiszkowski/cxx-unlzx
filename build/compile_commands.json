@@ -13,6 +13,12 @@
 },
 {
   "directory": "/home/ender/ws/c-unlzx/build",
+  "command": "/usr/bin/clang++  -fno-exceptions -g -std=gnu++17 -o CMakeFiles/unlzx_lib.dir/src/huffman.cc.o -c /home/ender/ws/c-unlzx/src/huffman.cc",
+  "file": "/home/ender/ws/c-unlzx/src/huffman.cc",
+  "output": "CMakeFiles/unlzx_lib.dir/src/huffman.cc.o"
+},
+{
+  "directory": "/home/ender/ws/c-unlzx/build",
   "command": "/usr/bin/clang++  -fno-exceptions -g -std=gnu++17 -o CMakeFiles/unlzx.dir/src/unlzx_main.cc.o -c /home/ender/ws/c-unlzx/src/unlzx_main.cc",
   "file": "/home/ender/ws/c-unlzx/src/unlzx_main.cc",
   "output": "CMakeFiles/unlzx.dir/src/unlzx_main.cc.o"

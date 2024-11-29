@@ -19,6 +19,8 @@
 /* ---------------------------------------------------------------------- */
 #include "unlzx.h"
 
+#include <cstdint>
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <sys/stat.h>
@@ -105,101 +107,6 @@ static const unsigned char table_four[34] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 1
 
 /* ---------------------------------------------------------------------- */
 
-/* Build a fast huffman decode table from the symbol bit lengths.         */
-/* There is an alternate algorithm which is faster but also more complex. */
-
-int make_decode_table(
-    int number_symbols, int table_size, unsigned char* length, unsigned short* table) {
-  unsigned char bit_num = 0;
-  int           symbol;
-  unsigned int  leaf; /* could be a register */
-  unsigned int  table_mask, bit_mask, pos, fill, next_symbol, reverse;
-  int           abort = 0;
-
-  pos = 0; /* consistantly used as the current position in the decode table */
-
-  bit_mask = table_mask = 1 << table_size;
-
-  bit_mask >>= 1; /* don't do the first number */
-  bit_num++;
-
-  while ((!abort) && (bit_num <= table_size)) {
-    for (symbol = 0; symbol < number_symbols; symbol++) {
-      if (length[symbol] == bit_num) {
-        reverse = pos; /* reverse the order of the position's bits */
-        leaf    = 0;
-        fill    = table_size;
-        do { /* reverse the position */
-          leaf = (leaf << 1) + (reverse & 1);
-          reverse >>= 1;
-        } while (--fill);
-        if ((pos += bit_mask) > table_mask) {
-          abort = 1;
-          break; /* we will overrun the table! abort! */
-        }
-        fill        = bit_mask;
-        next_symbol = 1 << bit_num;
-        do {
-          table[leaf] = symbol;
-          leaf += next_symbol;
-        } while (--fill);
-      }
-    }
-    bit_mask >>= 1;
-    bit_num++;
-  }
-
-  if ((!abort) && (pos != table_mask)) {
-    for (symbol = pos; symbol < table_mask; symbol++) { /* clear the rest of the table */
-      reverse = symbol; /* reverse the order of the position's bits */
-      leaf    = 0;
-      fill    = table_size;
-      do { /* reverse the position */
-        leaf = (leaf << 1) + (reverse & 1);
-        reverse >>= 1;
-      } while (--fill);
-      table[leaf] = 0;
-    }
-    next_symbol = table_mask >> 1;
-    pos <<= 16;
-    table_mask <<= 16;
-    bit_mask = 32768;
-
-    while ((!abort) && (bit_num <= 16)) {
-      for (symbol = 0; symbol < number_symbols; symbol++) {
-        if (length[symbol] == bit_num) {
-          reverse = pos >> 16; /* reverse the order of the position's bits */
-          leaf    = 0;
-          fill    = table_size;
-          do { /* reverse the position */
-            leaf = (leaf << 1) + (reverse & 1);
-            reverse >>= 1;
-          } while (--fill);
-          for (fill = 0; fill < bit_num - table_size; fill++) {
-            if (table[leaf] == 0) {
-              table[(next_symbol << 1)]     = 0;
-              table[(next_symbol << 1) + 1] = 0;
-              table[leaf]                   = next_symbol++;
-            }
-            leaf = table[leaf] << 1;
-            leaf += (pos >> (15 - fill)) & 1;
-          }
-          table[leaf] = symbol;
-          if ((pos += bit_mask) > table_mask) {
-            abort = 1;
-            break; /* we will overrun the table! abort! */
-          }
-        }
-      }
-      bit_mask >>= 1;
-      bit_num++;
-    }
-  }
-  if (pos != table_mask) abort = 1; /* the table is incomplete! */
-
-  return (abort);
-}
-
 /* ---------------------------------------------------------------------- */
 
 /* Read and build the decrunch tables. There better be enough data in the */
@@ -243,7 +150,7 @@ int read_literal_table() {
         control += *source++ << shift;
       }
     }
-    abort = make_decode_table(8, 7, offset_len, offset_table);
+    abort = !huffman::make_decode_table(8, 7, offset_len, offset_table);
   }
 
   /* read decrunch length */
@@ -289,7 +196,7 @@ int read_literal_table() {
           control += *source++ << shift;
         }
       }
-      abort = make_decode_table(20, 6, huffman20_len, huffman20_table);
+      abort = !huffman::make_decode_table(20, 6, huffman20_len, huffman20_table);
 
       if (abort) break; /* argh! table is corrupt! */
 
@@ -378,7 +285,7 @@ int read_literal_table() {
       max_symbol += 512;
     } while (max_symbol == 768);
 
-    if (!abort) abort = make_decode_table(768, 12, literal_len, literal_table);
+    if (!abort) abort = !huffman::make_decode_table(768, 12, literal_len, literal_table);
   }
 
   global_control = control;

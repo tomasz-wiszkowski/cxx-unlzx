@@ -16,6 +16,7 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-exceptions")
 set(SOURCES
     src/unlzx_crc.cc
     src/unlzx.cc
+    src/huffman.cc
 )
 
 set(HEADERS
