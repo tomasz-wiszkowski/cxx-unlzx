@@ -127,71 +127,73 @@ HuffmanDecoder::HuffmanDecoder()
     : offsets_(7, 8, 128), huffman20_(6, 20, 96), literals_(12, 768, 5120) {}
 
 int HuffmanDecoder::read_literal_table() {
-  unsigned int control;
-  int          shift;
-  unsigned int temp; /* could be a register */
-  unsigned int symbol, pos, count, fix, max_symbol;
-  int          abort = 0;
+  uint32_t control = global_control_;
+  int32_t  shift   = global_shift_;
+  uint32_t temp;
+  uint32_t symbol, pos, count, fix, max_symbol;
 
-  control = global_control_;
-  shift   = global_shift_;
-
-  if (shift < 0) { /* fix the control word if necessary */
+  // Fix the control word if necessary
+  if (shift < 0) {
     shift += 16;
     control += *source++ << (8 + shift);
     control += *source++ << shift;
   }
 
-  /* read the decrunch method */
+  // Read the decrunch method
   decrunch_method_ = control & 7;
   control >>= 3;
-  if ((shift -= 3) < 0) {
+  shift -= 3;
+  if (shift < 0) {
     shift += 16;
     control += *source++ << (8 + shift);
     control += *source++ << shift;
   }
 
-  /* Read and build the offset huffman table */
-  if ((!abort) && (decrunch_method_ == 3)) {
+  // Read and build the offset Huffman table
+  if (decrunch_method_ == 3) {
     for (temp = 0; temp < 8; temp++) {
       offsets_.bit_length_[temp] = control & 7;
       control >>= 3;
-      if ((shift -= 3) < 0) {
+      shift -= 3;
+      if (shift < 0) {
         shift += 16;
         control += *source++ << (8 + shift);
         control += *source++ << shift;
       }
     }
-    abort = !offsets_.reset_table();
-  }
-
-  /* read decrunch length */
-  if (!abort) {
-    decrunch_length_ = (control & 255) << 16;
-    control >>= 8;
-    if ((shift -= 8) < 0) {
-      shift += 16;
-      control += *source++ << (8 + shift);
-      control += *source++ << shift;
-    }
-    decrunch_length_ += (control & 255) << 8;
-    control >>= 8;
-    if ((shift -= 8) < 0) {
-      shift += 16;
-      control += *source++ << (8 + shift);
-      control += *source++ << shift;
-    }
-    decrunch_length_ += (control & 255);
-    control >>= 8;
-    if ((shift -= 8) < 0) {
-      shift += 16;
-      control += *source++ << (8 + shift);
-      control += *source++ << shift;
+    if (!offsets_.reset_table()) {
+      return 1;  // Failure in building offset Huffman table
     }
   }
 
-  /* read and build the huffman literal table */
-  if ((!abort) && (decrunch_method_ != 1)) {
+  // Read decrunch length
+  decrunch_length_ = (control & 255) << 16;
+  control >>= 8;
+  shift -= 8;
+  if (shift < 0) {
+    shift += 16;
+    control += *source++ << (8 + shift);
+    control += *source++ << shift;
+  }
+  decrunch_length_ += (control & 255) << 8;
+  control >>= 8;
+  shift -= 8;
+  if (shift < 0) {
+    shift += 16;
+    control += *source++ << (8 + shift);
+    control += *source++ << shift;
+  }
+  decrunch_length_ += (control & 255);
+  control >>= 8;
+  shift -= 8;
+  if (shift < 0) {
+    shift += 16;
+    control += *source++ << (8 + shift);
+    control += *source++ << shift;
+  }
+
+  // Read and build the Huffman literal table
+  if (decrunch_method_ != 1) {
     pos        = 0;
     fix        = 1;
     max_symbol = 256;
@@ -200,20 +202,24 @@ int HuffmanDecoder::read_literal_table() {
       for (temp = 0; temp < 20; temp++) {
         huffman20_.bit_length_[temp] = control & 15;
         control >>= 4;
-        if ((shift -= 4) < 0) {
+        shift -= 4;
+        if (shift < 0) {
           shift += 16;
           control += *source++ << (8 + shift);
           control += *source++ << shift;
         }
       }
-      abort = !huffman20_.reset_table();
-      if (abort) break; /* argh! table is corrupt! */
+      if (!huffman20_.reset_table()) {
+        return 1;  // Failure in building Huffman 20 table
+      }
 
       do {
-        if ((symbol = huffman20_.table_[control & 63]) >= 20) {
-          do { /* symbol is longer than 6 bits */
+        symbol = huffman20_.table_[control & 63];
+        if (symbol >= 20) {
+          do {  // Symbol is longer than 6 bits
             symbol = huffman20_.table_[((control >> 6) & 1) + (symbol << 1)];
-            if (!shift--) {
+            shift--;
+            if (shift < 0) {
               shift += 16;
               control += *source++ << 24;
               control += *source++ << 16;
@@ -225,43 +231,49 @@ int HuffmanDecoder::read_literal_table() {
           temp = huffman20_.bit_length_[symbol];
         }
         control >>= temp;
-        if ((shift -= temp) < 0) {
+        shift -= temp;
+        if (shift < 0) {
           shift += 16;
           control += *source++ << (8 + shift);
           control += *source++ << shift;
         }
         switch (symbol) {
         case 17:
-        case 18: {
+        case 18:
           if (symbol == 17) {
             temp  = 4;
             count = 3;
-          } else { /* symbol == 18 */
+          } else {  // symbol == 18
             temp  = 6 - fix;
             count = 19;
           }
           count += (control & kTableThree[temp]) + fix;
           control >>= temp;
-          if ((shift -= temp) < 0) {
+          shift -= temp;
+          if (shift < 0) {
             shift += 16;
             control += *source++ << (8 + shift);
             control += *source++ << shift;
           }
-          while ((pos < max_symbol) && (count--)) literals_.bit_length_[pos++] = 0;
+          while (pos < max_symbol && count--) {
+            literals_.bit_length_[pos++] = 0;
+          }
           break;
-        }
-        case 19: {
+        case 19:
           count = (control & 1) + 3 + fix;
-          if (!shift--) {
+          shift--;
+          if (shift < 0) {
             shift += 16;
             control += *source++ << 24;
             control += *source++ << 16;
           }
           control >>= 1;
-          if ((symbol = huffman20_.table_[control & 63]) >= 20) {
-            do { /* symbol is longer than 6 bits */
+          symbol = huffman20_.table_[control & 63];
+          if (symbol >= 20) {
+            do {  // Symbol is longer than 6 bits
               symbol = huffman20_.table_[((control >> 6) & 1) + (symbol << 1)];
-              if (!shift--) {
+              shift--;
+              if (shift < 0) {
                 shift += 16;
                 control += *source++ << 24;
                 control += *source++ << 16;
@@ -273,33 +285,36 @@ int HuffmanDecoder::read_literal_table() {
             temp = huffman20_.bit_length_[symbol];
           }
           control >>= temp;
-          if ((shift -= temp) < 0) {
+          shift -= temp;
+          if (shift < 0) {
             shift += 16;
             control += *source++ << (8 + shift);
             control += *source++ << shift;
           }
           symbol = kTableFour[literals_.bit_length_[pos] + 17 - symbol];
-          while ((pos < max_symbol) && (count--)) literals_.bit_length_[pos++] = symbol;
+          while (pos < max_symbol && count--) {
+            literals_.bit_length_[pos++] = symbol;
+          }
           break;
-        }
-        default: {
+        default:
           symbol                       = kTableFour[literals_.bit_length_[pos] + 17 - symbol];
           literals_.bit_length_[pos++] = symbol;
           break;
-        }
         }
       } while (pos < max_symbol);
       fix--;
       max_symbol += 512;
     } while (max_symbol == 768);
 
-    if (!abort) abort = !literals_.reset_table();
+    if (!literals_.reset_table()) {
+      return 1;  // Failure in building literal table
+    }
   }
 
   global_control_ = control;
   global_shift_   = shift;
 
-  return (abort);
+  return 0;  // Success
 }
 
 /* ---------------------------------------------------------------------- */
