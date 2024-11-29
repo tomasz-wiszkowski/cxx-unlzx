@@ -5,6 +5,12 @@
 
 #include <vector>
 
+extern uint8_t  decrunch_buffer[258 + 65536 + 258]; /* allow overrun for speed */
+extern uint8_t* source;
+extern uint8_t* destination;
+extern uint8_t* source_end;
+extern uint8_t* destination_end;
+
 enum class Action { View, Extract };
 
 int process_archive(char* filename, Action action);
@@ -29,4 +35,26 @@ class HuffmanTable {
   bool reset_table();
 };
 
+class HuffmanDecoder {
+ public:
+  HuffmanDecoder();
+  int  read_literal_table();
+  void decrunch();
+
+  uint32_t decrunch_length() const {
+    return decrunch_length_;
+  }
+
+ private:
+  HuffmanTable offsets_;
+  HuffmanTable huffman20_;
+  HuffmanTable literals_;
+
+  uint32_t global_control_{};
+  int32_t  global_shift_{-16};
+  uint32_t decrunch_method_{};
+  uint32_t decrunch_length_{};
+
+  uint32_t last_offset_{1};
+};
 }  // namespace huffman
