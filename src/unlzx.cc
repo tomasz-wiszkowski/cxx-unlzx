@@ -19,19 +19,21 @@
 /* ---------------------------------------------------------------------- */
 #include "unlzx.h"
 
-#include <cstdint>
-
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+
+#include <algorithm>
+#include <cstdint>
+#include <iterator>
 // #include <unistd.h>
 #include <stddef.h>
 #include <stdint.h>
 
 /* ---------------------------------------------------------------------- */
 
-static const unsigned char VERSION[] = "$VER: unlzx 1.1 (03.4.01)";
+static const unsigned char kVersion[] = "$VER: unlzx 1.1 (03.4.01)";
 
 /* ---------------------------------------------------------------------- */
 
@@ -50,14 +52,14 @@ unsigned char pack_mode;
 
 /* ---------------------------------------------------------------------- */
 
-struct filename_node {
-  struct filename_node* next;
-  unsigned int          length;
-  unsigned int          crc;
-  char                  filename[256];
+struct FilenameNode {
+  struct FilenameNode* next;
+  unsigned int         length;
+  unsigned int         crc;
+  char                 filename[256];
 };
 
-struct filename_node* filename_list;
+struct FilenameNode* filename_list;
 
 /* ---------------------------------------------------------------------- */
 
@@ -69,19 +71,6 @@ unsigned char* destination;
 unsigned char* source_end;
 unsigned char* destination_end;
 
-unsigned int decrunch_method;
-unsigned int decrunch_length;
-unsigned int last_offset;
-unsigned int global_control;
-int          global_shift;
-
-unsigned char  offset_len[8];
-unsigned short offset_table[128];
-unsigned char  huffman20_len[20];
-unsigned short huffman20_table[96];
-unsigned char  literal_len[768];
-unsigned short literal_table[5120];
-
 /* ---------------------------------------------------------------------- */
 
 static const char* month_str[16] = {"jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep",
@@ -92,19 +81,41 @@ static const char* month_str[16] = {"jan", "feb", "mar", "apr", "may", "jun", "j
 
 /* ---------------------------------------------------------------------- */
 
-static const unsigned char table_one[32] = {0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8,
+static const unsigned char kTableOne[32] = {0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8,
     8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13, 14, 14};
 
-static const unsigned int table_two[32] = {0, 1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96, 128,
+static const unsigned int kTableTwo[32] = {0, 1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96, 128,
     192, 256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096, 6144, 8192, 12288, 16384, 24576, 32768,
     49152};
 
-static const unsigned int table_three[16] = {
+static const unsigned int kTableThree[16] = {
     0, 1, 3, 7, 15, 31, 63, 127, 255, 511, 1023, 2047, 4095, 8191, 16383, 32767};
 
-static const unsigned char table_four[34] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+static const unsigned char kTableFour[34] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
     16, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
 
+class HuffmanDecoder {
+ public:
+  HuffmanDecoder();
+  int  read_literal_table();
+  void decrunch();
+
+  uint32_t decrunch_length() const {
+    return decrunch_length_;
+  }
+
+ private:
+  huffman::HuffmanTable offsets_;
+  huffman::HuffmanTable huffman20_;
+  huffman::HuffmanTable literals_;
+
+  uint32_t global_control_{};
+  int32_t  global_shift_{-16};
+  uint32_t decrunch_method_{};
+  uint32_t decrunch_length_{};
+
+  uint32_t last_offset_{1};
+};
 /* ---------------------------------------------------------------------- */
 
 /* ---------------------------------------------------------------------- */
@@ -112,15 +123,18 @@ static const unsigned char table_four[34] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 1
 /* Read and build the decrunch tables. There better be enough data in the */
 /* source buffer or it's stuffed. */
 
-int read_literal_table() {
+HuffmanDecoder::HuffmanDecoder()
+    : offsets_(7, 8, 128), huffman20_(6, 20, 96), literals_(12, 768, 5120) {}
+
+int HuffmanDecoder::read_literal_table() {
   unsigned int control;
   int          shift;
   unsigned int temp; /* could be a register */
   unsigned int symbol, pos, count, fix, max_symbol;
   int          abort = 0;
 
-  control = global_control;
-  shift   = global_shift;
+  control = global_control_;
+  shift   = global_shift_;
 
   if (shift < 0) { /* fix the control word if necessary */
     shift += 16;
@@ -129,8 +143,7 @@ int read_literal_table() {
   }
 
   /* read the decrunch method */
-
-  decrunch_method = control & 7;
+  decrunch_method_ = control & 7;
   control >>= 3;
   if ((shift -= 3) < 0) {
     shift += 16;
@@ -139,10 +152,9 @@ int read_literal_table() {
   }
 
   /* Read and build the offset huffman table */
-
-  if ((!abort) && (decrunch_method == 3)) {
+  if ((!abort) && (decrunch_method_ == 3)) {
     for (temp = 0; temp < 8; temp++) {
-      offset_len[temp] = control & 7;
+      offsets_.bit_length_[temp] = control & 7;
       control >>= 3;
       if ((shift -= 3) < 0) {
         shift += 16;
@@ -150,27 +162,26 @@ int read_literal_table() {
         control += *source++ << shift;
       }
     }
-    abort = !huffman::make_decode_table(8, 7, offset_len, offset_table);
+    abort = !offsets_.reset_table();
   }
 
   /* read decrunch length */
-
   if (!abort) {
-    decrunch_length = (control & 255) << 16;
+    decrunch_length_ = (control & 255) << 16;
     control >>= 8;
     if ((shift -= 8) < 0) {
       shift += 16;
       control += *source++ << (8 + shift);
       control += *source++ << shift;
     }
-    decrunch_length += (control & 255) << 8;
+    decrunch_length_ += (control & 255) << 8;
     control >>= 8;
     if ((shift -= 8) < 0) {
       shift += 16;
       control += *source++ << (8 + shift);
       control += *source++ << shift;
     }
-    decrunch_length += (control & 255);
+    decrunch_length_ += (control & 255);
     control >>= 8;
     if ((shift -= 8) < 0) {
       shift += 16;
@@ -180,15 +191,14 @@ int read_literal_table() {
   }
 
   /* read and build the huffman literal table */
-
-  if ((!abort) && (decrunch_method != 1)) {
+  if ((!abort) && (decrunch_method_ != 1)) {
     pos        = 0;
     fix        = 1;
     max_symbol = 256;
 
     do {
       for (temp = 0; temp < 20; temp++) {
-        huffman20_len[temp] = control & 15;
+        huffman20_.bit_length_[temp] = control & 15;
         control >>= 4;
         if ((shift -= 4) < 0) {
           shift += 16;
@@ -196,14 +206,13 @@ int read_literal_table() {
           control += *source++ << shift;
         }
       }
-      abort = !huffman::make_decode_table(20, 6, huffman20_len, huffman20_table);
-
+      abort = !huffman20_.reset_table();
       if (abort) break; /* argh! table is corrupt! */
 
       do {
-        if ((symbol = huffman20_table[control & 63]) >= 20) {
+        if ((symbol = huffman20_.table_[control & 63]) >= 20) {
           do { /* symbol is longer than 6 bits */
-            symbol = huffman20_table[((control >> 6) & 1) + (symbol << 1)];
+            symbol = huffman20_.table_[((control >> 6) & 1) + (symbol << 1)];
             if (!shift--) {
               shift += 16;
               control += *source++ << 24;
@@ -213,7 +222,7 @@ int read_literal_table() {
           } while (symbol >= 20);
           temp = 6;
         } else {
-          temp = huffman20_len[symbol];
+          temp = huffman20_.bit_length_[symbol];
         }
         control >>= temp;
         if ((shift -= temp) < 0) {
@@ -228,18 +237,17 @@ int read_literal_table() {
             temp  = 4;
             count = 3;
           } else { /* symbol == 18 */
-
             temp  = 6 - fix;
             count = 19;
           }
-          count += (control & table_three[temp]) + fix;
+          count += (control & kTableThree[temp]) + fix;
           control >>= temp;
           if ((shift -= temp) < 0) {
             shift += 16;
             control += *source++ << (8 + shift);
             control += *source++ << shift;
           }
-          while ((pos < max_symbol) && (count--)) literal_len[pos++] = 0;
+          while ((pos < max_symbol) && (count--)) literals_.bit_length_[pos++] = 0;
           break;
         }
         case 19: {
@@ -250,9 +258,9 @@ int read_literal_table() {
             control += *source++ << 16;
           }
           control >>= 1;
-          if ((symbol = huffman20_table[control & 63]) >= 20) {
+          if ((symbol = huffman20_.table_[control & 63]) >= 20) {
             do { /* symbol is longer than 6 bits */
-              symbol = huffman20_table[((control >> 6) & 1) + (symbol << 1)];
+              symbol = huffman20_.table_[((control >> 6) & 1) + (symbol << 1)];
               if (!shift--) {
                 shift += 16;
                 control += *source++ << 24;
@@ -262,7 +270,7 @@ int read_literal_table() {
             } while (symbol >= 20);
             temp = 6;
           } else {
-            temp = huffman20_len[symbol];
+            temp = huffman20_.bit_length_[symbol];
           }
           control >>= temp;
           if ((shift -= temp) < 0) {
@@ -270,13 +278,13 @@ int read_literal_table() {
             control += *source++ << (8 + shift);
             control += *source++ << shift;
           }
-          symbol = table_four[literal_len[pos] + 17 - symbol];
-          while ((pos < max_symbol) && (count--)) literal_len[pos++] = symbol;
+          symbol = kTableFour[literals_.bit_length_[pos] + 17 - symbol];
+          while ((pos < max_symbol) && (count--)) literals_.bit_length_[pos++] = symbol;
           break;
         }
         default: {
-          symbol             = table_four[literal_len[pos] + 17 - symbol];
-          literal_len[pos++] = symbol;
+          symbol                       = kTableFour[literals_.bit_length_[pos] + 17 - symbol];
+          literals_.bit_length_[pos++] = symbol;
           break;
         }
         }
@@ -285,11 +293,11 @@ int read_literal_table() {
       max_symbol += 512;
     } while (max_symbol == 768);
 
-    if (!abort) abort = !huffman::make_decode_table(768, 12, literal_len, literal_table);
+    if (!abort) abort = !literals_.reset_table();
   }
 
-  global_control = control;
-  global_shift   = shift;
+  global_control_ = control;
+  global_shift_   = shift;
 
   return (abort);
 }
@@ -300,18 +308,18 @@ int read_literal_table() {
 /* and source buffers. Most of the time is spent in this routine so it's  */
 /* pretty damn optimized. */
 
-void decrunch() {
+void HuffmanDecoder::decrunch() {
   unsigned int   control;
   int            shift;
   unsigned int   temp; /* could be a register */
   unsigned int   symbol, count;
   unsigned char* string;
 
-  control = global_control;
-  shift   = global_shift;
+  control = global_control_;
+  shift   = global_shift_;
 
   do {
-    if ((symbol = literal_table[control & 4095]) >= 768) {
+    if ((symbol = literals_.table_[control & 4095]) >= 768) {
       control >>= 12;
       if ((shift -= 12) < 0) {
         shift += 16;
@@ -319,7 +327,7 @@ void decrunch() {
         control += *source++ << shift;
       }
       do { /* literal is longer than 12 bits */
-        symbol = literal_table[(control & 1) + (symbol << 1)];
+        symbol = literals_.table_[(control & 1) + (symbol << 1)];
         if (!shift--) {
           shift += 16;
           control += *source++ << 24;
@@ -328,7 +336,7 @@ void decrunch() {
         control >>= 1;
       } while (symbol >= 768);
     } else {
-      temp = literal_len[symbol];
+      temp = literals_.bit_length_[symbol];
       control >>= temp;
       if ((shift -= temp) < 0) {
         shift += 16;
@@ -340,22 +348,22 @@ void decrunch() {
       *destination++ = symbol;
     } else {
       symbol -= 256;
-      count = table_two[temp = symbol & 31];
-      temp  = table_one[temp];
-      if ((temp >= 3) && (decrunch_method == 3)) {
+      count = kTableTwo[temp = symbol & 31];
+      temp  = kTableOne[temp];
+      if ((temp >= 3) && (decrunch_method_ == 3)) {
         temp -= 3;
-        count += ((control & table_three[temp]) << 3);
+        count += ((control & kTableThree[temp]) << 3);
         control >>= temp;
         if ((shift -= temp) < 0) {
           shift += 16;
           control += *source++ << (8 + shift);
           control += *source++ << shift;
         }
-        count += (temp = offset_table[control & 127]);
-        temp = offset_len[temp];
+        count += (temp = offsets_.table_[control & 127]);
+        temp = offsets_.bit_length_[temp];
       } else {
-        count += control & table_three[temp];
-        if (!count) count = last_offset;
+        count += control & kTableThree[temp];
+        if (!count) count = last_offset_;
       }
       control >>= temp;
       if ((shift -= temp) < 0) {
@@ -363,27 +371,27 @@ void decrunch() {
         control += *source++ << (8 + shift);
         control += *source++ << shift;
       }
-      last_offset = count;
+      last_offset_ = count;
 
-      count = table_two[temp = (symbol >> 5) & 15] + 3;
-      temp  = table_one[temp];
-      count += (control & table_three[temp]);
+      count = kTableTwo[temp = (symbol >> 5) & 15] + 3;
+      temp  = kTableOne[temp];
+      count += (control & kTableThree[temp]);
       control >>= temp;
       if ((shift -= temp) < 0) {
         shift += 16;
         control += *source++ << (8 + shift);
         control += *source++ << shift;
       }
-      string = (decrunch_buffer + last_offset < destination) ? destination - last_offset
-                                                             : destination + 65536 - last_offset;
+      string = (decrunch_buffer + last_offset_ < destination) ? destination - last_offset_
+                                                              : destination + 65536 - last_offset_;
       do {
         *destination++ = *string++;
       } while (--count);
     }
   } while ((destination < destination_end) && (source < source_end));
 
-  global_control = control;
-  global_shift   = shift;
+  global_control_ = control;
+  global_shift_   = shift;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -415,21 +423,17 @@ FILE* open_output(char* filename) {
 /* Trying to understand this function is hazardous. */
 
 int extract_normal(FILE* in_file) {
-  struct filename_node* node;
-  FILE*                 out_file = 0;
-  unsigned char*        pos;
-  unsigned char*        temp;
-  unsigned int          count;
-  int                   abort = 0;
+  struct FilenameNode* node;
+  FILE*                out_file = 0;
+  unsigned char*       pos;
+  unsigned char*       temp;
+  unsigned int         count;
+  int                  abort = 0;
 
-  global_control  = 0; /* initial control word */
-  global_shift    = -16;
-  last_offset     = 1;
-  unpack_size     = 0;
-  decrunch_length = 0;
+  HuffmanDecoder decoder;
 
-  for (count = 0; count < 8; count++) offset_len[count] = 0;
-  for (count = 0; count < 768; count++) literal_len[count] = 0;
+  unpack_size             = 0;
+  int64_t decrunch_length = 0;
 
   source_end = (source = read_buffer + 16384) - 1024;
   pos = destination_end = destination = decrunch_buffer + 258 + 65536;
@@ -478,7 +482,8 @@ int extract_normal(FILE* in_file) {
         /* if(source >= source_end) */
         /* check if we need to read the tables */
         if (decrunch_length <= 0) {
-          if (read_literal_table()) break; /* argh! can't make huffman tables! */
+          if (decoder.read_literal_table()) break; /* argh! can't make huffman tables! */
+          decrunch_length = decoder.decrunch_length();
         }
 
         /* unpack some data */
@@ -497,7 +502,7 @@ int extract_normal(FILE* in_file) {
           destination_end = decrunch_buffer + 258 + 65536;
         temp = destination;
 
-        decrunch();
+        decoder.decrunch();
 
         decrunch_length -= (destination - temp);
       }
@@ -533,10 +538,10 @@ int extract_normal(FILE* in_file) {
 /* This is less complex than extract_normal. Almost decipherable. */
 
 int extract_store(FILE* in_file) {
-  struct filename_node* node;
-  FILE*                 out_file;
-  unsigned int          count;
-  int                   abort = 0;
+  struct FilenameNode* node;
+  FILE*                out_file;
+  unsigned int         count;
+  int                  abort = 0;
 
   for (node = filename_list; (!abort) && node; node = node->next) {
     printf("Storing \"%s\"...", node->filename);
@@ -589,8 +594,8 @@ int extract_store(FILE* in_file) {
 /* Easiest of the three. Just print the file(s) we didn't understand. */
 
 int extract_unknown(FILE* in_file) {
-  struct filename_node* node;
-  int                   abort = 0;
+  struct FilenameNode* node;
+  int                  abort = 0;
 
   for (node = filename_list; node; node = node->next) {
     printf("Unknown \"%s\"\n", node->filename);
@@ -605,13 +610,13 @@ int extract_unknown(FILE* in_file) {
 /* always assumed. Will fail if there is no memory for a node. Sigh.      */
 
 int extract_archive(FILE* in_file) {
-  unsigned int           temp;
-  struct filename_node** filename_next;
-  struct filename_node*  node;
-  struct filename_node*  temp_node;
-  int                    actual;
-  int                    abort;
-  int                    result = 1; /* assume an error */
+  unsigned int          temp;
+  struct FilenameNode** filename_next;
+  struct FilenameNode*  node;
+  struct FilenameNode*  temp_node;
+  int                   actual;
+  int                   abort;
+  int                   result = 1; /* assume an error */
 
   filename_list = 0; /* clear the list */
   filename_next = &filename_list;
@@ -652,7 +657,7 @@ int extract_archive(FILE* in_file) {
                                + (archive_header[23] << 8) + archive_header[22]; /* data crc */
 
                     /* allocate a filename node */
-                    node = (struct filename_node*)malloc(sizeof(struct filename_node));
+                    node = (struct FilenameNode*)malloc(sizeof(struct FilenameNode));
                     if (node) {
                       *filename_next = node; /* add this node to the list */
                       filename_next  = &(node->next);
