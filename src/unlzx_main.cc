@@ -37,7 +37,11 @@ auto main(int argc, char** argv) -> int {
 
   for (; optind < argc; optind++) {
     std::println("Archive \"{}\"...", argv[optind]);
-    process_archive(argv[optind], action);
+    try {
+      process_archive(argv[optind], action);
+    } catch (std::exception& e) {
+      std::println("Error processing archive \"{}\": {}", argv[optind], e.what());
+    }
   }
   return 0;
 }

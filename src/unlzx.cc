@@ -24,6 +24,7 @@
 #include <cstdio>
 #include <deque>
 #include <filesystem>
+#include <format>
 #include <memory>
 #include <print>
 #include <stdexcept>
@@ -59,24 +60,32 @@ static const char* month_str[16] = {"?00", "jan", "feb", "mar", "apr", "may", "j
     "sep", "oct", "nov", "dec", "?13", "?14", "?15"};
 
 /* Opens a file for writing & creates the full path if required. */
-static auto open_output(const char* filename) -> FILE* {
-  FILE* file = nullptr;
+static auto open_output(const std::string& filename)
+    -> std::unique_ptr<FILE, decltype(&std::fclose)> {
+  std::unique_ptr<FILE, decltype(&std::fclose)> file(nullptr, &std::fclose);
 
-  if ((file = fopen(filename, "wbe")) == nullptr) {
+  file.reset(fopen(filename.data(), "wbe"));
+
+  if (!file) {
     // Compute the name of the encompassing directory and create it.
     // This logic assumes the file could not be opened because the parent directory doesn't exist.
     std::string dirname(filename);
     auto        pos = dirname.rfind('/');
     if (pos != std::string::npos) {
       dirname.resize(pos);
+      std::print("Creating \"{}\"...", dirname);
       std::filesystem::create_directories(dirname);
     }
 
-    if ((file = fopen(filename, "wbe")) == nullptr) {
-      std::println("Failed to open file '{}'", filename);
-    }
+    file.reset(fopen(filename.data(), "wbe"));
   }
-  return (file);
+
+  if (!file) {
+    throw std::runtime_error(std::format("unable to create file \"{}\"", filename));
+  }
+
+  std::print("Writing \"{}\"...", filename);
+  return file;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -126,10 +135,9 @@ auto ArchivedFileHeader::from_file(FILE* fh) -> std::unique_ptr<ArchivedFileHead
 }
 
 static auto extract_normal(FILE* in_file) -> bool {
-  FILE*          out_file = nullptr;
-  unsigned char* pos      = nullptr;
-  unsigned char* temp     = nullptr;
-  unsigned int   count    = 0;
+  unsigned char* pos   = nullptr;
+  unsigned char* temp  = nullptr;
+  unsigned int   count = 0;
 
   huffman::HuffmanDecoder decoder;
 
@@ -143,9 +151,7 @@ static auto extract_normal(FILE* in_file) -> bool {
     auto node = std::move(merged_files.front());
     merged_files.pop_front();
 
-    std::print("Extracting \"{}\"...", node->filename());
-
-    out_file = open_output(node->filename().data());
+    auto out_file = open_output(node->filename());
 
     crc::reset();
 
@@ -220,20 +226,16 @@ static auto extract_normal(FILE* in_file) -> bool {
       crc::calc(pos, count);
 
       if (out_file != nullptr) { /* Write the data to the file */
-        if (fwrite(pos, 1, count, out_file) != count) {
+        if (fwrite(pos, 1, count, out_file.get()) != count) {
           perror("FWrite"); /* argh! write error */
-          fclose(out_file);
-          out_file = nullptr;
         }
       }
       unpack_size -= count;
       pos += count;
     }
 
-    if (out_file != nullptr) {
-      fclose(out_file);
-      std::println(" crc {}", (node->data_crc() == crc::sum()) ? "good" : "bad");
-    }
+    out_file.reset();
+    std::println(" crc {}", (node->data_crc() == crc::sum()) ? "good" : "bad");
   } /* for */
 
   return true;
@@ -243,20 +245,16 @@ static auto extract_normal(FILE* in_file) -> bool {
 
 /* This is less complex than extract_normal. Almost decipherable. */
 
-static auto extract_store(FILE* in_file) -> bool {
-  FILE*        out_file = nullptr;
-  unsigned int count    = 0;
+static auto extract_store(FILE* in_file) -> void {
+  unsigned int count = 0;
 
   while (!merged_files.empty()) {
     auto node = std::move(merged_files.front());
     merged_files.pop_front();
 
-    std::print("Storing \"{}\"...", node->filename());
-
-    out_file = open_output(node->filename().data());
+    auto out_file = open_output(node->filename());
 
     crc::reset();
-
     unpack_size = node->unpack_size();
     unpack_size = std::min(unpack_size, pack_size);
 
@@ -266,47 +264,37 @@ static auto extract_store(FILE* in_file) -> bool {
       if (fread(read_buffer, 1, count, in_file) != count) {
         std::println("");
         if (ferror(in_file) != 0) {
-          perror("FRead(Data)");
-        } else {
-          std::println(stderr, "EOF: Data");
+          throw std::runtime_error(
+              std::format("failed to read data to construct file \"{}\"", node->filename()));
         }
-        return false;
+        throw std::runtime_error(std::format(
+            "unexpected end of input data while reconstructing file \"{}\"", node->filename()));
       }
       pack_size -= count;
 
       crc::calc(read_buffer, count);
 
-      if (out_file != nullptr) { /* Write the data to the file */
-        if (fwrite(read_buffer, 1, count, out_file) != count) {
-          perror("FWrite"); /* argh! write error */
-          fclose(out_file);
-          out_file = nullptr;
-        }
+      if (fwrite(read_buffer, 1, count, out_file.get()) != count) {
+        throw std::runtime_error(std::format("could not write file \"{}\"", node->filename()));
       }
       unpack_size -= count;
     }
 
-    if (out_file != nullptr) {
-      fclose(out_file);
-      std::println(" crc {}", (node->data_crc() == crc::sum()) ? "good" : "bad");
-    }
-  } /* for */
-
-  return true;
+    out_file.reset();
+    std::println(" crc {}", (node->data_crc() == crc::sum()) ? "good" : "bad");
+  }
 }
 
 /* ---------------------------------------------------------------------- */
 
 /* Easiest of the three. Just print the file(s) we didn't understand. */
 
-static auto extract_unknown(FILE* /*in_file*/) -> bool {
+static auto extract_unknown(FILE* /*in_file*/) -> void {
   while (!merged_files.empty()) {
     auto node = std::move(merged_files.front());
     merged_files.pop_front();
     std::println("Skipping \"{}\": unknown compression mode.", node->filename());
   }
-
-  return true;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -314,7 +302,7 @@ static auto extract_unknown(FILE* /*in_file*/) -> bool {
 /* Read the archive and build a linked list of names. Merged files is     */
 /* always assumed. Will fail if there is no memory for a node. Sigh.      */
 
-static auto extract_archive(FILE* in_file) -> bool {
+static auto extract_archive(FILE* in_file) -> void {
   for (;;) {
     auto archive_header = ArchivedFileHeader::from_file(in_file);
     if (!archive_header) {
@@ -330,45 +318,37 @@ static auto extract_archive(FILE* in_file) -> bool {
     if (pack_size != 0U) {
       switch (compression_type) {
       case ArchivedPackMode::kCompressionNone:
-        if (!extract_store(in_file)) {
-          return false;
-        }
+        extract_store(in_file);
         break;
 
       case ArchivedPackMode::kCompressionNormal:
         if (!extract_normal(in_file)) {
-          return false;
+          throw std::runtime_error("could not save compressed file");
         }
         break;
 
       default:
-        if (!extract_unknown(in_file)) {
-          return false;
-        }
+        extract_unknown(in_file);
         break;
       }
 
       // Advance to the next file if we couldn't read the current one (pack_size is non-zero).
       if (fseek(in_file, pack_size, SEEK_CUR) != 0) {
-        perror("FSeek(Data)");
-        break;
+        throw std::runtime_error("could not advance to the next archived file");
       }
     }
   }
-
-  return true;
 }
 
 /* ---------------------------------------------------------------------- */
 
 /* List the contents of an archive in a nice formatted kinda way. */
 
-static auto list_archive(FILE* in_file) -> bool {
-  unsigned int const temp         = 0;
-  unsigned int       total_pack   = 0;
-  unsigned int       total_unpack = 0;
-  unsigned int       total_files  = 0;
-  unsigned int       merge_size   = 0;
+static auto list_archive(FILE* in_file) -> void {
+  unsigned int total_pack   = 0;
+  unsigned int total_unpack = 0;
+  unsigned int total_files  = 0;
+  unsigned int merge_size   = 0;
 
   std::println("Unpacked   Packed Time     Date        Attrib   Name");
   std::println("-------- -------- -------- ----------- -------- ----");
@@ -415,8 +395,7 @@ static auto list_archive(FILE* in_file) -> bool {
     if (pack_size != 0U) { /* seek past the packed data */
       merge_size = 0;
       if (fseek(in_file, pack_size, SEEK_CUR) != 0) {
-        perror("FSeek(Data)");
-        break;
+        throw std::runtime_error("could not advance to the next archived file");
       }
     }
   }
@@ -424,49 +403,36 @@ static auto list_archive(FILE* in_file) -> bool {
   std::println("-------- -------- -------- ----------- -------- ----");
   std::print("{:8} {:8} ", total_unpack, total_pack);
   std::println("{} file{}", total_files, ((total_files == 1) ? "" : "s"));
-
-  return true;
 }
 
-/* ---------------------------------------------------------------------- */
-
-/* Process a single archive. */
-
-auto process_archive(char* filename, Action action) -> int {
-  int   result  = 1; /* assume an error */
-  FILE* in_file = nullptr;
-  int   actual  = 0;
-
-  if (nullptr == (in_file = fopen(filename, "rbe"))) {
-    perror("FOpen(Archive)");
-    return (result);
+auto process_archive(char* filename, Action action) -> void {
+  std::unique_ptr<FILE, decltype(&std::fclose)> in_file(std::fopen(filename, "rbe"), &std::fclose);
+  if (in_file == nullptr) {
+    throw std::runtime_error("could not open file");
   }
 
-  actual = fread(info_header, 1, 10, in_file);
-  if (ferror(in_file) == 0) {
-    if (actual == 10) {
-      if ((info_header[0] == 76) && (info_header[1] == 90) && (info_header[2] == 88)) { /* LZX */
-        switch (action) {
-        case Action::Extract:
-          result = extract_archive(in_file) ? 0 : 1;
-          break;
-
-        case Action::View:
-          result = list_archive(in_file) ? 0 : 1;
-          break;
-        }
-      } else {
-        std::println(stderr, "Info_Header: Bad ID");
-      }
-    } else {
-      std::println(stderr, "EOF: Info_Header");
-    }
-  } else {
-    perror("FRead(Info_Header)");
+  size_t actual = fread(info_header, 1, 10, in_file.get());
+  if (ferror(in_file.get()) != 0) {
+    throw std::runtime_error("could not read file header");
   }
-  fclose(in_file);
 
-  return (result);
+  if (actual != 10) {
+    throw std::runtime_error("incomplete file header");
+  }
+
+  if ((info_header[0] != 'L') || (info_header[1] != 'Z') || (info_header[2] != 'X')) {
+    throw std::runtime_error("not an LZX file");
+  }
+
+  switch (action) {
+  case Action::Extract:
+    extract_archive(in_file.get());
+    break;
+
+  case Action::View:
+    list_archive(in_file.get());
+    break;
+  }
 }
 
 /* ---------------------------------------------------------------------- */

@@ -16,7 +16,7 @@ extern uint8_t* destination_end;
 
 enum class Action : uint8_t { View, Extract };
 
-int process_archive(char* filename, Action action);
+void process_archive(char* filename, Action action);
 
 constexpr static uint32_t big_data_to_host(uint32_t data) {
   if constexpr (std::endian::native == std::endian::big) {
