@@ -10,11 +10,9 @@
 
 #include "input_buffer.h"
 
-extern uint8_t        decrunch_buffer[258 + 65536 + 258]; /* allow overrun for speed */
-extern const uint8_t* source;
-extern const uint8_t* source_end;
-extern uint8_t*       destination;
-extern uint8_t*       destination_end;
+extern uint8_t  decrunch_buffer[258 + 65536 + 258]; /* allow overrun for speed */
+extern uint8_t* destination;
+extern uint8_t* destination_end;
 
 enum class Action : uint8_t { View, Extract };
 
@@ -218,8 +216,8 @@ class HuffmanTable {
 class HuffmanDecoder {
  public:
   HuffmanDecoder();
-  int  read_literal_table();
-  void decrunch();
+  int  read_literal_table(InputBuffer* data);
+  void decrunch(InputBuffer* data);
 
   uint32_t decrunch_length() const {
     return decrunch_length_;

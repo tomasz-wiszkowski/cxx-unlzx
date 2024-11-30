@@ -27,27 +27,29 @@ constexpr uint8_t kSymbolLongerThanSixBits = 20;
 HuffmanDecoder::HuffmanDecoder()
     : offsets_(7, 8, 128), huffman20_(6, 20, 96), literals_(12, 768, 5120) {}
 
-int HuffmanDecoder::read_literal_table() {
+int HuffmanDecoder::read_literal_table(InputBuffer* source) {
   uint32_t control = global_control_;
   int32_t  shift   = global_shift_;
   uint32_t temp;
-  uint32_t symbol, pos, count, fix, max_symbol;
+  uint32_t symbol;
+  uint32_t pos;
+  uint32_t count;
+  uint32_t fix;
+  uint32_t max_symbol;
 
   // Fix the control word if necessary
-  if (shift < 0) {
+  if (shift <= 0) {
     shift += 16;
-    control += *source++ << (8 + shift);
-    control += *source++ << shift;
+    control += source->read_word() << shift;
   }
 
   // Read the decrunch method
   decrunch_method_ = control & 7;
   control >>= 3;
   shift -= 3;
-  if (shift < 0) {
+  if (shift <= 0) {
     shift += 16;
-    control += *source++ << (8 + shift);
-    control += *source++ << shift;
+    control += source->read_word() << shift;
   }
 
   // Read and build the offset Huffman table
@@ -56,10 +58,9 @@ int HuffmanDecoder::read_literal_table() {
       offsets_.bit_length_[temp] = control & 7;
       control >>= 3;
       shift -= 3;
-      if (shift < 0) {
+      if (shift <= 0) {
         shift += 16;
-        control += *source++ << (8 + shift);
-        control += *source++ << shift;
+        control += source->read_word() << shift;
       }
     }
     if (!offsets_.reset_table()) {
@@ -71,26 +72,23 @@ int HuffmanDecoder::read_literal_table() {
   decrunch_length_ = (control & 255) << 16;
   control >>= 8;
   shift -= 8;
-  if (shift < 0) {
+  if (shift <= 0) {
     shift += 16;
-    control += *source++ << (8 + shift);
-    control += *source++ << shift;
+    control += source->read_word() << shift;
   }
   decrunch_length_ += (control & 255) << 8;
   control >>= 8;
   shift -= 8;
-  if (shift < 0) {
+  if (shift <= 0) {
     shift += 16;
-    control += *source++ << (8 + shift);
-    control += *source++ << shift;
+    control += source->read_word() << shift;
   }
   decrunch_length_ += (control & 255);
   control >>= 8;
   shift -= 8;
-  if (shift < 0) {
+  if (shift <= 0) {
     shift += 16;
-    control += *source++ << (8 + shift);
-    control += *source++ << shift;
+    control += source->read_word() << shift;
   }
 
   // Read and build the Huffman literal table
@@ -104,10 +102,9 @@ int HuffmanDecoder::read_literal_table() {
         huffman20_.bit_length_[temp] = control & 15;
         control >>= 4;
         shift -= 4;
-        if (shift < 0) {
+        if (shift <= 0) {
           shift += 16;
-          control += *source++ << (8 + shift);
-          control += *source++ << shift;
+          control += source->read_word() << shift;
         }
       }
       if (!huffman20_.reset_table()) {
@@ -122,8 +119,7 @@ int HuffmanDecoder::read_literal_table() {
             shift--;
             if (shift < 0) {
               shift += 16;
-              control += *source++ << 24;
-              control += *source++ << 16;
+              control += source->read_word() << 16;
             }
             control >>= 1;
           } while (symbol >= kSymbolLongerThanSixBits);
@@ -133,12 +129,12 @@ int HuffmanDecoder::read_literal_table() {
         }
         control >>= temp;
         shift -= temp;
-        if (shift < 0) {
+        if (shift <= 0) {
           shift += 16;
-          control += *source++ << (8 + shift);
-          control += *source++ << shift;
+          control += source->read_word() << shift;
         }
         switch (symbol) {
+
         case kSymbolZeroFill:
         case kSymbolRepeatZero:
           if (symbol == kSymbolZeroFill) {
@@ -151,22 +147,22 @@ int HuffmanDecoder::read_literal_table() {
           count += (control & kBitLengthMasks[temp]) + fix;
           control >>= temp;
           shift -= temp;
-          if (shift < 0) {
+          if (shift <= 0) {
             shift += 16;
-            control += *source++ << (8 + shift);
-            control += *source++ << shift;
+            control += source->read_word() << shift;
           }
-          while (pos < max_symbol && count--) {
+          while (pos < max_symbol && ((count--) != 0U)) {
             literals_.bit_length_[pos++] = 0;
           }
           break;
+
+
         case kSymbolRepeatPrevious:
           count = (control & 1) + 3 + fix;
           shift--;
           if (shift < 0) {
             shift += 16;
-            control += *source++ << 24;
-            control += *source++ << 16;
+            control += source->read_word() << 16;
           }
           control >>= 1;
           symbol = huffman20_.table_[control & 63];
@@ -176,8 +172,7 @@ int HuffmanDecoder::read_literal_table() {
               shift--;
               if (shift < 0) {
                 shift += 16;
-                control += *source++ << 24;
-                control += *source++ << 16;
+                control += source->read_word() << 16;
               }
               control >>= 1;
             } while (symbol >= kSymbolLongerThanSixBits);
@@ -187,16 +182,17 @@ int HuffmanDecoder::read_literal_table() {
           }
           control >>= temp;
           shift -= temp;
-          if (shift < 0) {
+          if (shift <= 0) {
             shift += 16;
-            control += *source++ << (8 + shift);
-            control += *source++ << shift;
+            control += source->read_word() << shift;
           }
           symbol = kBaseValues[literals_.bit_length_[pos] + 17 - symbol];
-          while (pos < max_symbol && count--) {
+          while (pos < max_symbol && ((count--) != 0U)) {
             literals_.bit_length_[pos++] = symbol;
           }
           break;
+
+
         default:
           symbol                       = kBaseValues[literals_.bit_length_[pos] + 17 - symbol];
           literals_.bit_length_[pos++] = symbol;
@@ -224,11 +220,12 @@ int HuffmanDecoder::read_literal_table() {
 /* and source buffers. Most of the time is spent in this routine so it's  */
 /* pretty damn optimized. */
 
-void HuffmanDecoder::decrunch() {
+void HuffmanDecoder::decrunch(InputBuffer* source) {
   unsigned int   control;
   int            shift;
   unsigned int   temp; /* could be a register */
-  unsigned int   symbol, count;
+  unsigned int   symbol;
+  unsigned int   count;
   unsigned char* string;
 
   control = global_control_;
@@ -239,15 +236,13 @@ void HuffmanDecoder::decrunch() {
       control >>= 12;
       if ((shift -= 12) < 0) {
         shift += 16;
-        control += *source++ << (8 + shift);
-        control += *source++ << shift;
+        control += source->read_word() << shift;
       }
       do { /* literal is longer than 12 bits */
         symbol = literals_.table_[(control & 1) + (symbol << 1)];
-        if (!shift--) {
+        if ((shift--) == 0) {
           shift += 16;
-          control += *source++ << 24;
-          control += *source++ << 16;
+          control += source->read_word() << 16;
         }
         control >>= 1;
       } while (symbol >= 768);
@@ -256,8 +251,7 @@ void HuffmanDecoder::decrunch() {
       control >>= temp;
       if ((shift -= temp) < 0) {
         shift += 16;
-        control += *source++ << (8 + shift);
-        control += *source++ << shift;
+        control += source->read_word() << shift;
       }
     }
     if (symbol < 256) {
@@ -272,20 +266,18 @@ void HuffmanDecoder::decrunch() {
         control >>= temp;
         if ((shift -= temp) < 0) {
           shift += 16;
-          control += *source++ << (8 + shift);
-          control += *source++ << shift;
+          control += source->read_word() << shift;
         }
         count += (temp = offsets_.table_[control & 127]);
         temp = offsets_.bit_length_[temp];
       } else {
         count += control & kBitLengthMasks[temp];
-        if (!count) count = last_offset_;
+        if (count == 0U) count = last_offset_;
       }
       control >>= temp;
       if ((shift -= temp) < 0) {
         shift += 16;
-        control += *source++ << (8 + shift);
-        control += *source++ << shift;
+        control += source->read_word() << shift;
       }
       last_offset_ = count;
 
@@ -295,16 +287,15 @@ void HuffmanDecoder::decrunch() {
       control >>= temp;
       if ((shift -= temp) < 0) {
         shift += 16;
-        control += *source++ << (8 + shift);
-        control += *source++ << shift;
+        control += source->read_word() << shift;
       }
       string = (decrunch_buffer + last_offset_ < destination) ? destination - last_offset_
                                                               : destination + 65536 - last_offset_;
       do {
         *destination++ = *string++;
-      } while (--count);
+      } while (--count != 0U);
     }
-  } while ((destination < destination_end) && (source < source_end));
+  } while ((destination < destination_end) && (!source->is_eof()));
 
   global_control_ = control;
   global_shift_   = shift;

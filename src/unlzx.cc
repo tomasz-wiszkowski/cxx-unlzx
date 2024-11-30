@@ -45,11 +45,9 @@ static std::deque<std::unique_ptr<ArchivedFileHeader>> merged_files;
 
 /* ---------------------------------------------------------------------- */
 
-uint8_t        decrunch_buffer[258 + 65536 + 258]; /* allow overrun for speed */
-const uint8_t* source;
-const uint8_t* source_end;
-uint8_t*       destination;
-uint8_t*       destination_end;
+uint8_t  decrunch_buffer[258 + 65536 + 258]; /* allow overrun for speed */
+uint8_t* destination;
+uint8_t* destination_end;
 
 /* ---------------------------------------------------------------------- */
 
@@ -119,10 +117,8 @@ static auto extract_normal(InputBuffer* in_file) -> void {
   uint32_t unpack_size     = 0;
   int64_t  decrunch_length = 0;
 
-  auto view  = in_file->read_span(pack_size);
-  pack_size  = 0;
-  source     = view.data();
-  source_end = &view.back();
+  auto compressed_data = in_file->read_buffer(pack_size);
+  pack_size            = 0;
 
   pos = destination_end = destination = decrunch_buffer + 258 + 65536;
 
@@ -137,7 +133,7 @@ static auto extract_normal(InputBuffer* in_file) -> void {
     while (unpack_size > 0) {
       if (pos == destination) {
         if (decrunch_length <= 0) {
-          if (decoder.read_literal_table() != 0) {
+          if (decoder.read_literal_table(&compressed_data) != 0) {
             break; /* argh! can't make huffman tables! */
           }
           decrunch_length = decoder.decrunch_length();
@@ -158,7 +154,7 @@ static auto extract_normal(InputBuffer* in_file) -> void {
         destination_end = std::min(destination_end, decrunch_buffer + 258 + 65536);
         temp            = destination;
 
-        decoder.decrunch();
+        decoder.decrunch(&compressed_data);
 
         decrunch_length -= (destination - temp);
       }
