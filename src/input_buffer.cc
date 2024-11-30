@@ -15,25 +15,26 @@
 #include <memory>
 
 std::unique_ptr<InputBuffer> InputBuffer::for_file(const char* filepath) {
-  int fd = open(filepath, O_RDONLY);
-  if (fd == -1) return {};
+  int file_desc_ = open(filepath, O_RDONLY);
+  if (file_desc_ == -1) return {};
 
-  struct stat sb;
-  if (fstat(fd, &sb) == -1) {
-    close(fd);
+  struct stat stat_buffer;
+  if (fstat(file_desc_, &stat_buffer) == -1) {
+    close(file_desc_);
     return {};
   }
 
-  size_t filesize = sb.st_size;
+  size_t filesize = stat_buffer.st_size;
 
-  uint8_t* data = static_cast<uint8_t*>(mmap(nullptr, filesize, PROT_READ, MAP_PRIVATE, fd, 0));
+  uint8_t* data =
+      static_cast<uint8_t*>(mmap(nullptr, filesize, PROT_READ, MAP_PRIVATE, file_desc_, 0));
   if (data == MAP_FAILED) {
-    close(fd);
+    close(file_desc_);
     return {};
   }
 
   auto res       = std::make_unique<InputBuffer>();
-  res->fd_       = fd;
+  res->fd_       = file_desc_;
   res->data_     = data;
   res->filesize_ = filesize;
 
