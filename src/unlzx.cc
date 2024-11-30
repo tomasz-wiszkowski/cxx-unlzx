@@ -40,19 +40,16 @@ static const unsigned char kVersion[] = "$VER: unlzx 1.1 (03.4.01)";
 static unsigned char info_header[10];
 
 static unsigned int pack_size;
-static unsigned int unpack_size;
 
 static std::deque<std::unique_ptr<ArchivedFileHeader>> merged_files;
 
 /* ---------------------------------------------------------------------- */
 
-static uint8_t read_buffer[16384]; /* have a reasonable sized read buffer */
-
-uint8_t  decrunch_buffer[258 + 65536 + 258]; /* allow overrun for speed */
-uint8_t* source;
-uint8_t* destination;
-uint8_t* source_end;
-uint8_t* destination_end;
+uint8_t        decrunch_buffer[258 + 65536 + 258]; /* allow overrun for speed */
+const uint8_t* source;
+const uint8_t* source_end;
+uint8_t*       destination;
+uint8_t*       destination_end;
 
 /* ---------------------------------------------------------------------- */
 
@@ -90,43 +87,21 @@ static auto open_output(const std::string& filename)
 
 /* ---------------------------------------------------------------------- */
 
-auto ArchivedFileHeader::from_file(FILE* fh) -> std::unique_ptr<ArchivedFileHeader> {
+auto ArchivedFileHeader::from_buffer(InputBuffer* buffer) -> std::unique_ptr<ArchivedFileHeader> {
+  if (buffer->is_eof()) return {};
+
   auto result = std::make_unique<ArchivedFileHeader>();
-
-  size_t const read_len = fread(&result->metadata_, 1, sizeof(result->metadata_), fh);
-
-  if (read_len == 0) {
-    return {};
-  }
-
-  if (read_len != sizeof(result->metadata_)) {
-    throw std::runtime_error("Could not read archive header.");
-  }
-
-  crc::reset();
+  buffer->read_into(&result->metadata_, sizeof(result->metadata_));
 
   uint32_t const header_crc = result->header_crc();
   result->clear_header_crc();
+  result->filename_ = buffer->capture_as_string_view(result->filename_length());
+  result->comment_  = buffer->capture_as_string_view(result->comment_length());
 
+  crc::reset();
   crc::calc(&result->metadata_, sizeof(result->metadata_));
-
-  result->filename_.resize(result->filename_length());
-  if (fread(result->filename_.data(), 1, result->filename_length(), fh)
-      != result->filename_length()) {
-    throw std::runtime_error("Could not read archived file name.");
-  }
-
-  result->comment_.resize(result->comment_length());
-  if (result->comment_length() > 0) {
-    if (fread(result->comment_.data(), 1, result->comment_length(), fh)
-        != result->comment_length()) {
-      throw std::runtime_error("Could not read archived file comment.");
-    }
-  }
-
   crc::calc(result->filename_.data(), result->filename_.size());
   crc::calc(result->comment_.data(), result->comment_.size());
-
   if (crc::sum() != header_crc) {
     throw std::runtime_error("File header checksum invalid.");
   }
@@ -134,17 +109,21 @@ auto ArchivedFileHeader::from_file(FILE* fh) -> std::unique_ptr<ArchivedFileHead
   return result;
 }
 
-static auto extract_normal(FILE* in_file) -> void {
+static auto extract_normal(InputBuffer* in_file) -> void {
   unsigned char* pos   = nullptr;
   unsigned char* temp  = nullptr;
   unsigned int   count = 0;
 
   huffman::HuffmanDecoder decoder;
 
-  unpack_size             = 0;
-  int64_t decrunch_length = 0;
+  uint32_t unpack_size     = 0;
+  int64_t  decrunch_length = 0;
 
-  source_end = (source = read_buffer + 16384) - 1024;
+  auto view  = in_file->capture_as_span(pack_size);
+  pack_size  = 0;
+  source     = view.data();
+  source_end = &view.back();
+
   pos = destination_end = destination = decrunch_buffer + 258 + 65536;
 
   while (!merged_files.empty()) {
@@ -156,40 +135,7 @@ static auto extract_normal(FILE* in_file) -> void {
 
     unpack_size = node->unpack_size();
     while (unpack_size > 0) {
-      if (pos == destination) {     /* time to fill the buffer? */
-                                    /* check if we have enough data and read some if not */
-        if (source >= source_end) { /* have we exhausted the current read buffer? */
-          temp  = read_buffer;
-          count = temp - source + 16384;
-          if (count != 0U) {
-            do { /* copy the remaining overrun to the start of the buffer */
-              *temp++ = *source++;
-            } while (--count != 0U);
-          }
-          source = read_buffer;
-          count  = source - temp + 16384;
-
-          count = std::min(pack_size, count); /* make sure we don't read too much */
-
-          if (fread(temp, 1, count, in_file) != count) {
-            if (ferror(in_file) != 0) {
-              throw std::runtime_error(
-                  std::format("failed to read data to construct file \"{}\"", node->filename()));
-            }
-            throw std::runtime_error(std::format(
-                "unexpected end of input data while reconstructing file \"{}\"", node->filename()));
-          }
-
-          pack_size -= count;
-
-          temp += count;
-          if (source >= temp) {
-            break; /* argh! no more data! */
-          }
-        }
-
-        /* if(source >= source_end) */
-        /* check if we need to read the tables */
+      if (pos == destination) {
         if (decrunch_length <= 0) {
           if (decoder.read_literal_table() != 0) {
             break; /* argh! can't make huffman tables! */
@@ -236,44 +182,30 @@ static auto extract_normal(FILE* in_file) -> void {
 
 /* ---------------------------------------------------------------------- */
 
-/* This is less complex than extract_normal. Almost decipherable. */
-
-static auto extract_store(FILE* in_file) -> void {
-  unsigned int count = 0;
-
+static auto extract_store(InputBuffer* in_file) -> void {
   while (!merged_files.empty()) {
     auto node = std::move(merged_files.front());
     merged_files.pop_front();
+
+    uint32_t unpack_size = std::min(pack_size, node->unpack_size());
+
+    auto view     = in_file->capture_as_span(unpack_size);
     auto out_file = open_output(node->filename());
+    auto written  = fwrite(view.data(), 1, view.size(), out_file.get());
 
-    crc::reset();
-
-    unpack_size = node->unpack_size();
-    unpack_size = std::min(unpack_size, pack_size);
-    while (unpack_size > 0) {
-      count = (unpack_size > 16384) ? 16384 : unpack_size;
-
-      if (fread(read_buffer, 1, count, in_file) != count) {
-        if (ferror(in_file) != 0) {
-          throw std::runtime_error(
-              std::format("failed to read data to construct file \"{}\"", node->filename()));
-        }
-        throw std::runtime_error(std::format(
-            "unexpected end of input data while reconstructing file \"{}\"", node->filename()));
-      }
-      pack_size -= count;
-
-      crc::calc(read_buffer, count);
-
-      if (fwrite(read_buffer, 1, count, out_file.get()) != count) {
-        throw std::runtime_error(std::format("could not write file \"{}\"", node->filename()));
-      }
-      unpack_size -= count;
+    if (written != view.size()) {
+      throw std::runtime_error(std::format("could not write file \"{}\"", node->filename()));
     }
 
+    crc::reset();
+    crc::calc(view.data(), view.size());
     std::println(" crc {}", (node->data_crc() == crc::sum()) ? "good" : "bad");
+
+    pack_size -= view.size();
   }
 }
+
+/* ---------------------------------------------------------------------- */
 
 static auto report_unknown() -> void {
   while (!merged_files.empty()) {
@@ -285,12 +217,9 @@ static auto report_unknown() -> void {
 
 /* ---------------------------------------------------------------------- */
 
-/* Read the archive and build a linked list of names. Merged files is     */
-/* always assumed. Will fail if there is no memory for a node. Sigh.      */
-
-static auto extract_archive(FILE* in_file) -> void {
+static auto extract_archive(InputBuffer* in_file) -> void {
   for (;;) {
-    auto archive_header = ArchivedFileHeader::from_file(in_file);
+    auto archive_header = ArchivedFileHeader::from_buffer(in_file);
     if (!archive_header) {
       break;
     }
@@ -316,19 +245,14 @@ static auto extract_archive(FILE* in_file) -> void {
         break;
       }
 
-      // Advance to the next file if we couldn't read the current one (pack_size is non-zero).
-      if (fseek(in_file, pack_size, SEEK_CUR) != 0) {
-        throw std::runtime_error("could not advance to the next archived file");
-      }
+      in_file->skip(pack_size);
     }
   }
 }
 
 /* ---------------------------------------------------------------------- */
 
-/* List the contents of an archive in a nice formatted kinda way. */
-
-static auto list_archive(FILE* in_file) -> void {
+static auto list_archive(InputBuffer* in_file) -> void {
   unsigned int total_pack   = 0;
   unsigned int total_unpack = 0;
   unsigned int total_files  = 0;
@@ -338,15 +262,15 @@ static auto list_archive(FILE* in_file) -> void {
   std::println("-------- -------- -------- ----------- -------- ----");
 
   for (;;) {
-    auto archive_header = ArchivedFileHeader::from_file(in_file);
+    auto archive_header = ArchivedFileHeader::from_buffer(in_file);
     if (!archive_header) {
       break;
     }
 
-    uint8_t const attributes = archive_header->attributes(); /* file protection modes */
-    unpack_size              = archive_header->unpack_size();
-    pack_size                = archive_header->pack_size();
-    const auto& stamp        = archive_header->datestamp();
+    uint8_t const attributes  = archive_header->attributes(); /* file protection modes */
+    uint32_t      unpack_size = archive_header->unpack_size();
+    pack_size                 = archive_header->pack_size();
+    const auto& stamp         = archive_header->datestamp();
 
     total_pack += pack_size;
     total_unpack += unpack_size;
@@ -378,9 +302,7 @@ static auto list_archive(FILE* in_file) -> void {
 
     if (pack_size != 0U) { /* seek past the packed data */
       merge_size = 0;
-      if (fseek(in_file, pack_size, SEEK_CUR) != 0) {
-        throw std::runtime_error("could not advance to the next archived file");
-      }
+      in_file->skip(pack_size);
     }
   }
 
@@ -390,19 +312,15 @@ static auto list_archive(FILE* in_file) -> void {
 }
 
 auto process_archive(char* filename, Action action) -> void {
+  auto in_buffer = InputBuffer::for_file(filename);
+
   std::unique_ptr<FILE, decltype(&std::fclose)> in_file(std::fopen(filename, "rbe"), &std::fclose);
   if (in_file == nullptr) {
     throw std::runtime_error("could not open file");
   }
 
-  size_t actual = fread(info_header, 1, 10, in_file.get());
-  if (ferror(in_file.get()) != 0) {
-    throw std::runtime_error("could not read file header");
-  }
-
-  if (actual != 10) {
-    throw std::runtime_error("incomplete file header");
-  }
+  in_buffer->read_into(&info_header, sizeof(info_header));
+  fseek(in_file.get(), sizeof(info_header), SEEK_CUR);
 
   if ((info_header[0] != 'L') || (info_header[1] != 'Z') || (info_header[2] != 'X')) {
     throw std::runtime_error("not an LZX file");
@@ -410,11 +328,11 @@ auto process_archive(char* filename, Action action) -> void {
 
   switch (action) {
   case Action::Extract:
-    extract_archive(in_file.get());
+    extract_archive(in_buffer.get());
     break;
 
   case Action::View:
-    list_archive(in_file.get());
+    list_archive(in_buffer.get());
     break;
   }
 }

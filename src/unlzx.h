@@ -8,11 +8,13 @@
 #include <string>
 #include <vector>
 
-extern uint8_t  decrunch_buffer[258 + 65536 + 258]; /* allow overrun for speed */
-extern uint8_t* source;
-extern uint8_t* destination;
-extern uint8_t* source_end;
-extern uint8_t* destination_end;
+#include "input_buffer.h"
+
+extern uint8_t        decrunch_buffer[258 + 65536 + 258]; /* allow overrun for speed */
+extern const uint8_t* source;
+extern const uint8_t* source_end;
+extern uint8_t*       destination;
+extern uint8_t*       destination_end;
 
 enum class Action : uint8_t { View, Extract };
 
@@ -190,12 +192,12 @@ class ArchivedFileHeader {
     return comment_;
   }
 
-  static std::unique_ptr<ArchivedFileHeader> from_file(FILE* fh);
+  static std::unique_ptr<ArchivedFileHeader> from_buffer(InputBuffer* buffer);
 };
 
 namespace crc {
 void     reset();
-uint32_t calc(void* memory, size_t length);
+uint32_t calc(const void* memory, size_t length);
 uint32_t sum();
 }  // namespace crc
 

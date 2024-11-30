@@ -50,8 +50,8 @@ auto sum() -> uint32_t {
   return sum_;
 }
 
-auto calc(void* memory_raw, size_t length) -> uint32_t {
-  const uint8_t* memory = static_cast<uint8_t*>(memory_raw);
+auto calc(const void* memory_raw, size_t length) -> uint32_t {
+  const uint8_t* memory = static_cast<const uint8_t*>(memory_raw);
 
   if (length == 0) {
     return sum_;

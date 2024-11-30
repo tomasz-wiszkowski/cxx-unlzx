@@ -9,7 +9,7 @@ auto main(int argc, char** argv) -> int {
   Action action = Action::Extract;
 
   while (true) {
-    int option = getopt(argc, argv, "vxc");
+    int option = getopt(argc, argv, "vx");
     if (option == -1) {
       break;
     }

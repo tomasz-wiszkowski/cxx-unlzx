@@ -12,7 +12,10 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
+#include <format>
 #include <memory>
+#include <stdexcept>
 
 std::unique_ptr<InputBuffer> InputBuffer::for_file(const char* filepath) {
   int file_desc_ = open(filepath, O_RDONLY);
@@ -30,7 +33,7 @@ std::unique_ptr<InputBuffer> InputBuffer::for_file(const char* filepath) {
       static_cast<uint8_t*>(mmap(nullptr, filesize, PROT_READ, MAP_PRIVATE, file_desc_, 0));
   if (data == MAP_FAILED) {
     close(file_desc_);
-    return {};
+    throw std::runtime_error(std::format("unable to mmap input file \"{}\"", filepath));
   }
 
   auto res       = std::make_unique<InputBuffer>();
@@ -42,7 +45,7 @@ std::unique_ptr<InputBuffer> InputBuffer::for_file(const char* filepath) {
 }
 
 InputBuffer::~InputBuffer() {
-  munmap(data_, filesize_);
+  munmap(const_cast<uint8_t*>(data_), filesize_);
   close(fd_);
 }
 
@@ -88,4 +91,38 @@ uint16_t InputBuffer::read_bits(size_t data_bits_requested) {
   data_bits_available_ -= data_bits_requested;
 
   return result;
+}
+
+void InputBuffer::read_into(void* target, size_t length) {
+  size_t data_position = skip(length);
+  std::memcpy(target, &data_[data_position], length);
+}
+
+bool InputBuffer::is_eof() const {
+  return current_position_ == filesize_;
+}
+
+std::string_view InputBuffer::capture_as_string_view(size_t length) {
+  size_t data_position = skip(length);
+  return std::string_view(reinterpret_cast<const char*>(&data_[data_position]), length);
+}
+
+std::span<const uint8_t> InputBuffer::capture_as_span(size_t length) {
+  size_t data_position = skip(length);
+  return std::span<const uint8_t>(&data_[data_position], length);
+}
+
+size_t InputBuffer::skip(size_t length) {
+  if (data_bits_available_ > 0) {
+    throw std::runtime_error("cannot read misaligned data");
+  }
+
+  if (filesize_ < current_position_ + length) {
+    throw std::runtime_error("unexpected end of input file");
+  }
+
+  size_t last_position = current_position_;
+  current_position_ += length;
+
+  return last_position;
 }

@@ -1,5 +1,9 @@
+#pragma once
+
 #include <cstdint>
 #include <memory>
+#include <span>
+#include <string_view>
 
 class InputBuffer {
  public:
@@ -13,11 +17,18 @@ class InputBuffer {
 
   uint16_t read_bits(size_t data_bits_requested);
 
+  void                     read_into(void* target, size_t length);
+  std::string_view         capture_as_string_view(size_t length);
+  std::span<const uint8_t> capture_as_span(size_t length);
+  size_t                   skip(size_t length);
+
+  bool is_eof() const;
+
  private:
-  int      fd_{};
-  size_t   filesize_{};
-  uint8_t* data_{};
-  size_t   current_position_{};
+  int            fd_{};
+  size_t         filesize_{};
+  const uint8_t* data_{};
+  size_t         current_position_{};
 
   size_t data_bits_{};
   size_t data_bits_available_{};
