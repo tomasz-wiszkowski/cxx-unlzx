@@ -18,10 +18,12 @@ set(SOURCES
     src/unlzx.cc
     src/huffman_decoder.cc
     src/huffman_table.cc
+    src/input_buffer.cc
 )
 
 set(HEADERS
     src/unlzx.h
+    src/input_buffer.h
 )
 
 add_library(unlzx_lib ${SOURCES} ${HEADERS})
@@ -34,7 +36,11 @@ target_link_libraries(unlzx PRIVATE unlzx_lib)
 enable_testing()
 
 find_package(GTest REQUIRED)
-add_executable(unlzx_test src/unlzx_test.cc src/unlzx_crc_test.cc)
+add_executable(unlzx_test
+    src/unlzx_test.cc
+    src/unlzx_crc_test.cc
+    src/input_buffer_test.cc
+)
 target_include_directories(unlzx_test PRIVATE ${GTEST_INCLUDE_DIRS})
 target_link_libraries(unlzx_test PUBLIC GTest::GTest GTest::Main PRIVATE unlzx_lib)
 add_test(NAME unlzx_test COMMAND unlzx_test)

@@ -25,6 +25,12 @@
 },
 {
   "directory": "/home/ender/ws/c-unlzx/build",
+  "command": "/usr/bin/clang++  -fno-exceptions -g -std=gnu++17 -o CMakeFiles/unlzx_lib.dir/src/input_buffer.cc.o -c /home/ender/ws/c-unlzx/src/input_buffer.cc",
+  "file": "/home/ender/ws/c-unlzx/src/input_buffer.cc",
+  "output": "CMakeFiles/unlzx_lib.dir/src/input_buffer.cc.o"
+},
+{
+  "directory": "/home/ender/ws/c-unlzx/build",
   "command": "/usr/bin/clang++  -fno-exceptions -g -std=gnu++17 -o CMakeFiles/unlzx.dir/src/unlzx_main.cc.o -c /home/ender/ws/c-unlzx/src/unlzx_main.cc",
   "file": "/home/ender/ws/c-unlzx/src/unlzx_main.cc",
   "output": "CMakeFiles/unlzx.dir/src/unlzx_main.cc.o"
@@ -40,5 +46,11 @@
   "command": "/usr/bin/clang++  -fno-exceptions -g -std=gnu++17 -DGTEST_HAS_PTHREAD=1 -o CMakeFiles/unlzx_test.dir/src/unlzx_crc_test.cc.o -c /home/ender/ws/c-unlzx/src/unlzx_crc_test.cc",
   "file": "/home/ender/ws/c-unlzx/src/unlzx_crc_test.cc",
   "output": "CMakeFiles/unlzx_test.dir/src/unlzx_crc_test.cc.o"
+},
+{
+  "directory": "/home/ender/ws/c-unlzx/build",
+  "command": "/usr/bin/clang++  -fno-exceptions -g -std=gnu++17 -DGTEST_HAS_PTHREAD=1 -o CMakeFiles/unlzx_test.dir/src/input_buffer_test.cc.o -c /home/ender/ws/c-unlzx/src/input_buffer_test.cc",
+  "file": "/home/ender/ws/c-unlzx/src/input_buffer_test.cc",
+  "output": "CMakeFiles/unlzx_test.dir/src/input_buffer_test.cc.o"
 }
 ]
