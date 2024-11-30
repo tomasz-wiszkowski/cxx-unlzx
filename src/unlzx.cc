@@ -73,7 +73,7 @@ static auto open_output(const std::string& filename)
     auto        pos = dirname.rfind('/');
     if (pos != std::string::npos) {
       dirname.resize(pos);
-      std::print("Creating \"{}\"...", dirname);
+      std::println("Creating \"{}/\"", dirname);
       std::filesystem::create_directories(dirname);
     }
 
@@ -134,7 +134,7 @@ auto ArchivedFileHeader::from_file(FILE* fh) -> std::unique_ptr<ArchivedFileHead
   return result;
 }
 
-static auto extract_normal(FILE* in_file) -> bool {
+static auto extract_normal(FILE* in_file) -> void {
   unsigned char* pos   = nullptr;
   unsigned char* temp  = nullptr;
   unsigned int   count = 0;
@@ -150,13 +150,11 @@ static auto extract_normal(FILE* in_file) -> bool {
   while (!merged_files.empty()) {
     auto node = std::move(merged_files.front());
     merged_files.pop_front();
-
     auto out_file = open_output(node->filename());
 
     crc::reset();
 
     unpack_size = node->unpack_size();
-
     while (unpack_size > 0) {
       if (pos == destination) {     /* time to fill the buffer? */
                                     /* check if we have enough data and read some if not */
@@ -174,14 +172,14 @@ static auto extract_normal(FILE* in_file) -> bool {
           count = std::min(pack_size, count); /* make sure we don't read too much */
 
           if (fread(temp, 1, count, in_file) != count) {
-            std::println("");
             if (ferror(in_file) != 0) {
-              perror("FRead(Data)");
-            } else {
-              std::println(stderr, "EOF: Data");
+              throw std::runtime_error(
+                  std::format("failed to read data to construct file \"{}\"", node->filename()));
             }
-            return false;
+            throw std::runtime_error(std::format(
+                "unexpected end of input data while reconstructing file \"{}\"", node->filename()));
           }
+
           pack_size -= count;
 
           temp += count;
@@ -225,20 +223,15 @@ static auto extract_normal(FILE* in_file) -> bool {
 
       crc::calc(pos, count);
 
-      if (out_file != nullptr) { /* Write the data to the file */
-        if (fwrite(pos, 1, count, out_file.get()) != count) {
-          perror("FWrite"); /* argh! write error */
-        }
+      if (fwrite(pos, 1, count, out_file.get()) != count) {
+        throw std::runtime_error(std::format("could not write file \"{}\"", node->filename()));
       }
       unpack_size -= count;
       pos += count;
     }
 
-    out_file.reset();
     std::println(" crc {}", (node->data_crc() == crc::sum()) ? "good" : "bad");
   } /* for */
-
-  return true;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -251,18 +244,16 @@ static auto extract_store(FILE* in_file) -> void {
   while (!merged_files.empty()) {
     auto node = std::move(merged_files.front());
     merged_files.pop_front();
-
     auto out_file = open_output(node->filename());
 
     crc::reset();
+
     unpack_size = node->unpack_size();
     unpack_size = std::min(unpack_size, pack_size);
-
     while (unpack_size > 0) {
       count = (unpack_size > 16384) ? 16384 : unpack_size;
 
       if (fread(read_buffer, 1, count, in_file) != count) {
-        std::println("");
         if (ferror(in_file) != 0) {
           throw std::runtime_error(
               std::format("failed to read data to construct file \"{}\"", node->filename()));
@@ -280,16 +271,11 @@ static auto extract_store(FILE* in_file) -> void {
       unpack_size -= count;
     }
 
-    out_file.reset();
     std::println(" crc {}", (node->data_crc() == crc::sum()) ? "good" : "bad");
   }
 }
 
-/* ---------------------------------------------------------------------- */
-
-/* Easiest of the three. Just print the file(s) we didn't understand. */
-
-static auto extract_unknown(FILE* /*in_file*/) -> void {
+static auto report_unknown() -> void {
   while (!merged_files.empty()) {
     auto node = std::move(merged_files.front());
     merged_files.pop_front();
@@ -322,13 +308,11 @@ static auto extract_archive(FILE* in_file) -> void {
         break;
 
       case ArchivedPackMode::kCompressionNormal:
-        if (!extract_normal(in_file)) {
-          throw std::runtime_error("could not save compressed file");
-        }
+        extract_normal(in_file);
         break;
 
       default:
-        extract_unknown(in_file);
+        report_unknown();
         break;
       }
 
