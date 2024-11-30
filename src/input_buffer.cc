@@ -17,7 +17,7 @@
 #include <memory>
 #include <stdexcept>
 
-std::unique_ptr<InputBuffer> InputBuffer::for_file(const char* filepath) {
+std::unique_ptr<MmapInputBuffer> MmapInputBuffer::for_file(const char* filepath) {
   int file_desc_ = open(filepath, O_RDONLY);
   if (file_desc_ == -1) return {};
 
@@ -36,7 +36,7 @@ std::unique_ptr<InputBuffer> InputBuffer::for_file(const char* filepath) {
     throw std::runtime_error(std::format("unable to mmap input file \"{}\"", filepath));
   }
 
-  auto res       = std::make_unique<InputBuffer>();
+  auto res       = std::make_unique<MmapInputBuffer>();
   res->fd_       = file_desc_;
   res->data_     = data;
   res->filesize_ = filesize;
@@ -44,9 +44,13 @@ std::unique_ptr<InputBuffer> InputBuffer::for_file(const char* filepath) {
   return res;
 }
 
-InputBuffer::~InputBuffer() {
+MmapInputBuffer::~MmapInputBuffer() {
   munmap(const_cast<uint8_t*>(data_), filesize_);
   close(fd_);
+}
+
+InputBuffer MmapInputBuffer::get() const {
+  return InputBuffer(data_, filesize_);
 }
 
 uint8_t InputBuffer::read_byte() {
@@ -102,14 +106,19 @@ bool InputBuffer::is_eof() const {
   return current_position_ == filesize_;
 }
 
-std::string_view InputBuffer::capture_as_string_view(size_t length) {
+std::string_view InputBuffer::read_string_view(size_t length) {
   size_t data_position = skip(length);
   return std::string_view(reinterpret_cast<const char*>(&data_[data_position]), length);
 }
 
-std::span<const uint8_t> InputBuffer::capture_as_span(size_t length) {
+std::span<const uint8_t> InputBuffer::read_span(size_t length) {
   size_t data_position = skip(length);
   return std::span<const uint8_t>(&data_[data_position], length);
+}
+
+InputBuffer InputBuffer::read_buffer(size_t length) {
+  size_t data_position = skip(length);
+  return InputBuffer(&data_[data_position], length);
 }
 
 size_t InputBuffer::skip(size_t length) {

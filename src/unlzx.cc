@@ -95,8 +95,8 @@ auto ArchivedFileHeader::from_buffer(InputBuffer* buffer) -> std::unique_ptr<Arc
 
   uint32_t const header_crc = result->header_crc();
   result->clear_header_crc();
-  result->filename_ = buffer->capture_as_string_view(result->filename_length());
-  result->comment_  = buffer->capture_as_string_view(result->comment_length());
+  result->filename_ = buffer->read_string_view(result->filename_length());
+  result->comment_  = buffer->read_string_view(result->comment_length());
 
   crc::reset();
   crc::calc(&result->metadata_, sizeof(result->metadata_));
@@ -119,7 +119,7 @@ static auto extract_normal(InputBuffer* in_file) -> void {
   uint32_t unpack_size     = 0;
   int64_t  decrunch_length = 0;
 
-  auto view  = in_file->capture_as_span(pack_size);
+  auto view  = in_file->read_span(pack_size);
   pack_size  = 0;
   source     = view.data();
   source_end = &view.back();
@@ -189,7 +189,7 @@ static auto extract_store(InputBuffer* in_file) -> void {
 
     uint32_t unpack_size = std::min(pack_size, node->unpack_size());
 
-    auto view     = in_file->capture_as_span(unpack_size);
+    auto view     = in_file->read_span(unpack_size);
     auto out_file = open_output(node->filename());
     auto written  = fwrite(view.data(), 1, view.size(), out_file.get());
 
@@ -312,14 +312,15 @@ static auto list_archive(InputBuffer* in_file) -> void {
 }
 
 auto process_archive(char* filename, Action action) -> void {
-  auto in_buffer = InputBuffer::for_file(filename);
+  auto mmap_buffer = MmapInputBuffer::for_file(filename);
+  auto in_buffer   = mmap_buffer->get();
 
   std::unique_ptr<FILE, decltype(&std::fclose)> in_file(std::fopen(filename, "rbe"), &std::fclose);
   if (in_file == nullptr) {
     throw std::runtime_error("could not open file");
   }
 
-  in_buffer->read_into(&info_header, sizeof(info_header));
+  in_buffer.read_into(&info_header, sizeof(info_header));
   fseek(in_file.get(), sizeof(info_header), SEEK_CUR);
 
   if ((info_header[0] != 'L') || (info_header[1] != 'Z') || (info_header[2] != 'X')) {
@@ -328,11 +329,11 @@ auto process_archive(char* filename, Action action) -> void {
 
   switch (action) {
   case Action::Extract:
-    extract_archive(in_buffer.get());
+    extract_archive(&in_buffer);
     break;
 
   case Action::View:
-    list_archive(in_buffer.get());
+    list_archive(&in_buffer);
     break;
   }
 }
