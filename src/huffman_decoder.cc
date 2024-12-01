@@ -1,4 +1,6 @@
+#include <algorithm>
 #include <cstdint>
+#include <print>
 
 #include "unlzx.hh"
 
@@ -25,7 +27,6 @@ HuffmanDecoder::HuffmanDecoder()
     : offsets_(7, 8, 128), huffman20_(6, 20, 96), literals_(12, 768, 5120) {}
 
 int HuffmanDecoder::read_literal_table(InputBuffer* source) {
-  uint32_t temp;
   uint32_t symbol;
   uint32_t pos;
   uint32_t count;
@@ -37,9 +38,8 @@ int HuffmanDecoder::read_literal_table(InputBuffer* source) {
 
   // Read and build the offset Huffman table
   if (decrunch_method_ == 3) {
-    for (temp = 0; temp < 8; temp++) {
-      offsets_.bit_length_[temp] = source->read_bits(3);
-    }
+    std::generate(offsets_.bit_length_.begin(), offsets_.bit_length_.end(),
+        [&source]() { return source->read_bits(3); });
     if (!offsets_.reset_table()) {
       return 1;  // Failure in building offset Huffman table
     }
@@ -50,6 +50,12 @@ int HuffmanDecoder::read_literal_table(InputBuffer* source) {
   decrunch_length_ |= source->read_bits(8) << 8;
   decrunch_length_ |= source->read_bits(8);
 
+  auto fill_literals_bit_lengths = [&](uint32_t byte_count, uint8_t value) {
+    uint32_t fill_length = std::min(byte_count, max_symbol - pos);
+    std::fill_n(literals_.bit_length_.begin() + pos, fill_length, value);
+    return fill_length;
+  };
+
   // Read and build the Huffman literal table
   if (decrunch_method_ != 1) {
     pos        = 0;
@@ -57,12 +63,10 @@ int HuffmanDecoder::read_literal_table(InputBuffer* source) {
     max_symbol = 256;
 
     do {
-      for (temp = 0; temp < 20; temp++) {
-        huffman20_.bit_length_[temp] = source->read_bits(4);
-      }
-
+      std::generate(huffman20_.bit_length_.begin(), huffman20_.bit_length_.end(),
+          [&source]() { return source->read_bits(4); });
       if (!huffman20_.reset_table()) {
-        return 1;  // Failure in building Huffman 20 table
+        throw std::runtime_error("Failure in building huffman lookup table");
       }
 
       do {
@@ -74,53 +78,42 @@ int HuffmanDecoder::read_literal_table(InputBuffer* source) {
             symbol = huffman20_.table_[symbol << 1 | source->read_bits(1)];
           } while (symbol >= kSymbolLongerThanSixBits);
         } else {
-          temp = huffman20_.bit_length_[symbol];
-          source->read_bits(temp);
+          source->read_bits(huffman20_.bit_length_[symbol]);
         }
 
 
         switch (symbol) {
         case kSymbolZeroFill:
-        case kSymbolRepeatZero:
-          if (symbol == kSymbolZeroFill) {
-            temp  = 4;
-            count = 3;
-          } else {  // symbol == kSymbolRepeatZero
-            temp  = 6 - fix;
-            count = 19;
-          }
-          count += source->read_bits(temp) + fix;
+          count = 3 + source->read_bits(4) + fix;
+          pos += fill_literals_bit_lengths(count, 0);
+          break;
 
-          while (pos < max_symbol && ((count--) != 0U)) {
-            literals_.bit_length_[pos++] = 0;
-          }
+        case kSymbolRepeatZero:
+          count = 19 + source->read_bits(6 - fix) + fix;
+          pos += fill_literals_bit_lengths(count, 0);
           break;
 
 
-        case kSymbolRepeatPrevious:
-          count = source->read_bits(1) + 3 + fix;
-
+        case kSymbolRepeatPrevious: {
+          count  = 3 + source->read_bits(1) + fix;
           symbol = huffman20_.table_[source->peek_bits(6)];
+
           if (symbol >= kSymbolLongerThanSixBits) {
             source->read_bits(6);
             do {  // Symbol is longer than 6 bits
               symbol = huffman20_.table_[(symbol << 1) | source->read_bits(1)];
             } while (symbol >= kSymbolLongerThanSixBits);
           } else {
-            temp = huffman20_.bit_length_[symbol];
-            source->read_bits(temp);
+            source->read_bits(huffman20_.bit_length_[symbol]);
           }
 
           symbol = kBaseValues[literals_.bit_length_[pos] + 17 - symbol];
-          while (pos < max_symbol && ((count--) != 0U)) {
-            literals_.bit_length_[pos++] = symbol;
-          }
+          pos += fill_literals_bit_lengths(count, symbol);
           break;
-
+        }
 
         default:
-          symbol                       = kBaseValues[literals_.bit_length_[pos] + 17 - symbol];
-          literals_.bit_length_[pos++] = symbol;
+          literals_.bit_length_[pos++] = kBaseValues[literals_.bit_length_[pos] + 17 - symbol];
           break;
         }
       } while (pos < max_symbol);
@@ -129,7 +122,7 @@ int HuffmanDecoder::read_literal_table(InputBuffer* source) {
     } while (max_symbol == 768);
 
     if (!literals_.reset_table()) {
-      return 1;  // Failure in building literal table
+      throw std::runtime_error("Failure in building huffman literal table");
     }
   }
 

@@ -34,31 +34,36 @@ bool HuffmanTable::reset_table() {
 
   current_bit_length++;
 
+  // Reverse the position bits, keeping at most `table_bits_`.
+  // e.g. if `value` is 0bABCD and `table_bits_` is 3, then result will be 0bDCB.
+  auto reverse_bits = [this](uint32_t value) {
+    uint32_t leaf = 0;
+    for (int i = 0; i < table_bits_; i++) {
+      leaf = (leaf << 1) | ((value >> i) & 1);
+    }
+    return leaf;
+  };
+
   // First pass: fill the table for symbols with bit lengths <= table_bits_
   while (current_bit_length <= table_bits_) {
     for (symbol = 0; symbol < bit_length_.size(); symbol++) {
-      if (bit_length_[symbol] == current_bit_length) {
-        reversed_position = position;
-        leaf              = 0;
-        fill              = table_bits_;
+      if (bit_length_[symbol] != current_bit_length) {
+        continue;
+      }
 
-        // Reverse the position bits
-        while ((fill--) != 0U) {
-          leaf = (leaf << 1) | (reversed_position & 1);
-          reversed_position >>= 1;
-        }
+      leaf = reverse_bits(position);
 
-        position += bit_mask;
-        if (position > table_mask) {
-          return false;  // Abort due to position exceeding table mask
-        }
+      position += bit_mask;
+      if (position > table_mask) {
+        return false;  // Abort due to position exceeding table mask
+      }
 
-        fill        = bit_mask;
-        next_symbol = 1 << current_bit_length;
-        while ((fill--) != 0U) {
-          table_[leaf] = symbol;
-          leaf += next_symbol;
-        }
+      fill        = bit_mask;
+      next_symbol = 1 << current_bit_length;
+      while (fill > 0) {
+        fill--;
+        table_[leaf] = symbol;
+        leaf += next_symbol;
       }
     }
     bit_mask >>= 1;
@@ -68,16 +73,7 @@ bool HuffmanTable::reset_table() {
   // Second pass: fill the table for symbols with bit lengths > table_bits_
   if (position != table_mask) {
     for (symbol = position; symbol < table_mask; symbol++) {
-      reversed_position = symbol;
-      leaf              = 0;
-      fill              = table_bits_;
-
-      // Reverse the position bits
-      while ((fill--) != 0U) {
-        leaf = (leaf << 1) | (reversed_position & 1);
-        reversed_position >>= 1;
-      }
-
+      leaf         = reverse_bits(symbol);
       table_[leaf] = 0;
     }
 
@@ -89,15 +85,7 @@ bool HuffmanTable::reset_table() {
     while (current_bit_length <= 16) {
       for (symbol = 0; symbol < bit_length_.size(); symbol++) {
         if (bit_length_[symbol] == current_bit_length) {
-          reversed_position = position >> 16;
-          leaf              = 0;
-          fill              = table_bits_;
-
-          // Reverse the position bits
-          while ((fill--) != 0U) {
-            leaf = (leaf << 1) | (reversed_position & 1);
-            reversed_position >>= 1;
-          }
+          leaf = reverse_bits(position >> 16);
 
           for (fill = 0; fill < current_bit_length - table_bits_; fill++) {
             if (table_[leaf] == 0) {

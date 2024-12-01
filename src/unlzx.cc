@@ -55,16 +55,22 @@ static const char* month_str[16] = {"?00", "jan", "feb", "mar", "apr", "may", "j
     "sep", "oct", "nov", "dec", "?13", "?14", "?15"};
 
 /* Opens a file for writing & creates the full path if required. */
-static auto open_output(const std::string& filename)
-    -> std::unique_ptr<FILE, decltype(&std::fclose)> {
+static auto open_output(ArchivedFileHeader* node) -> std::unique_ptr<FILE, decltype(&std::fclose)> {
   std::unique_ptr<FILE, decltype(&std::fclose)> file(nullptr, &std::fclose);
 
-  file.reset(fopen(filename.data(), "wbe"));
+  // Special case: create directory.
+  if (node->unpack_size() == 0 && node->filename().ends_with("/")) {
+    std::filesystem::create_directories(node->filename());
+    std::println("Creating directory \"{}\"", node->filename());
+    return file;
+  }
+
+  file.reset(fopen(node->filename().data(), "wbe"));
 
   if (!file) {
     // Compute the name of the encompassing directory and create it.
     // This logic assumes the file could not be opened because the parent directory doesn't exist.
-    std::string dirname(filename);
+    std::string dirname(node->filename());
     auto        pos = dirname.rfind('/');
     if (pos != std::string::npos) {
       dirname.resize(pos);
@@ -72,14 +78,14 @@ static auto open_output(const std::string& filename)
       std::filesystem::create_directories(dirname);
     }
 
-    file.reset(fopen(filename.data(), "wbe"));
+    file.reset(fopen(node->filename().data(), "wbe"));
   }
 
   if (!file) {
-    throw std::runtime_error(std::format("unable to create file \"{}\"", filename));
+    throw std::runtime_error(std::format("unable to create file \"{}\"", node->filename()));
   }
 
-  std::print("Writing \"{}\"...", filename);
+  std::print("Writing \"{}\"...", node->filename());
   return file;
 }
 
@@ -125,7 +131,7 @@ static auto extract_normal(InputBuffer* in_file) -> void {
   while (!merged_files.empty()) {
     auto node = std::move(merged_files.front());
     merged_files.pop_front();
-    auto out_file = open_output(node->filename());
+    auto out_file = open_output(node.get());
 
     crc::reset();
 
@@ -165,8 +171,10 @@ static auto extract_normal(InputBuffer* in_file) -> void {
 
       crc::calc(pos, count);
 
-      if (fwrite(pos, 1, count, out_file.get()) != count) {
-        throw std::runtime_error(std::format("could not write file \"{}\"", node->filename()));
+      if (out_file) {
+        if (fwrite(pos, 1, count, out_file.get()) != count) {
+          throw std::runtime_error(std::format("could not write file \"{}\"", node->filename()));
+        }
       }
       unpack_size -= count;
       pos += count;
@@ -186,8 +194,12 @@ static auto extract_store(InputBuffer* in_file) -> void {
     uint32_t unpack_size = std::min(pack_size, node->unpack_size());
 
     auto view     = in_file->read_span(unpack_size);
-    auto out_file = open_output(node->filename());
-    auto written  = fwrite(view.data(), 1, view.size(), out_file.get());
+    auto out_file = open_output(node.get());
+    auto written  = 0;
+
+    if (out_file) {
+      written = fwrite(view.data(), 1, view.size(), out_file.get());
+    }
 
     if (written != view.size()) {
       throw std::runtime_error(std::format("could not write file \"{}\"", node->filename()));
