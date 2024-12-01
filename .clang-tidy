@@ -1,5 +1,5 @@
 ---
-# Checks: '*'  # Enable all checks
-Checks: '-*,clang-diagnostic-*,clang-diagnostic-unused-value,clang-analyzer-*,-*,bugprone-*,performance-*,readability-*,-readability-magic-numbers,-readability-braces-around-statements,-readability-inconsistent-declaration-parameter-name,-readability-named-parameter'
-HeaderFilterRegex: 'src/.*\.h'
-ExtraArgs: ['-x', 'c++', '-std=c++23']
+Checks: '-*,clang-diagnostic-*,clang-diagnostic-unused-value,clang-analyzer-*,-*,bugprone-*,performance-*,readability-*,-readability-magic-numbers,-readability-braces-around-statements,-readability-inconsistent-declaration-parameter-name,-readability-named-parameter,-clang-analyzer-alpha.core.HeaderGuard'
+SystemHeaders: false
+HeaderFilterRegex: 'src\/.*\.hh'
+ExtraArgs: ['-std=c++23']

@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-#include "input_buffer.h"
+#include "input_buffer.hh"
 
 extern uint8_t  decrunch_buffer[258 + 65536 + 258]; /* allow overrun for speed */
 extern uint8_t* destination;
@@ -228,8 +228,6 @@ class HuffmanDecoder {
   HuffmanTable huffman20_;
   HuffmanTable literals_;
 
-  uint32_t global_control_{};
-  int32_t  global_shift_{-16};
   uint32_t decrunch_method_{};
   uint32_t decrunch_length_{};
 

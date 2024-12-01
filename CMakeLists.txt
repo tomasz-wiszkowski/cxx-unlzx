@@ -6,6 +6,7 @@ project(UnLzx VERSION 1.0 LANGUAGES C CXX)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/out)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/out)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/out)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Specify the C++ standard
 set(CMAKE_CXX_STANDARD 23)
@@ -22,8 +23,8 @@ set(SOURCES
 )
 
 set(HEADERS
-    src/unlzx.h
-    src/input_buffer.h
+    src/unlzx.hh
+    src/input_buffer.hh
 )
 
 add_library(unlzx_lib ${SOURCES} ${HEADERS})

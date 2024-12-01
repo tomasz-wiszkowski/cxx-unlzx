@@ -1,7 +1,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "unlzx.h"
+#include "unlzx.hh"
 
 namespace crc {
 namespace {

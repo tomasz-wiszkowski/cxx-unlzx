@@ -1,6 +1,6 @@
 #include <cstdint>
 
-#include "unlzx.h"
+#include "unlzx.hh"
 
 namespace huffman {
 
@@ -8,7 +8,6 @@ HuffmanTable::HuffmanTable(size_t table_bits, size_t num_symbols, size_t num_dec
     : table_bits_{table_bits} {
   bit_length_.resize(num_symbols);
   table_.resize(num_decode_entries);
-  reset_table();
 }
 
 /**
@@ -29,7 +28,9 @@ bool HuffmanTable::reset_table() {
   uint32_t table_mask = 1 << table_bits_;
   uint32_t bit_mask   = table_mask >> 1;
   uint32_t position   = 0;
-  uint32_t fill, next_symbol, reversed_position;
+  uint32_t fill;
+  uint32_t next_symbol;
+  uint32_t reversed_position;
 
   current_bit_length++;
 
@@ -42,7 +43,7 @@ bool HuffmanTable::reset_table() {
         fill              = table_bits_;
 
         // Reverse the position bits
-        while (fill--) {
+        while ((fill--) != 0U) {
           leaf = (leaf << 1) | (reversed_position & 1);
           reversed_position >>= 1;
         }
@@ -54,7 +55,7 @@ bool HuffmanTable::reset_table() {
 
         fill        = bit_mask;
         next_symbol = 1 << current_bit_length;
-        while (fill--) {
+        while ((fill--) != 0U) {
           table_[leaf] = symbol;
           leaf += next_symbol;
         }
@@ -72,7 +73,7 @@ bool HuffmanTable::reset_table() {
       fill              = table_bits_;
 
       // Reverse the position bits
-      while (fill--) {
+      while ((fill--) != 0U) {
         leaf = (leaf << 1) | (reversed_position & 1);
         reversed_position >>= 1;
       }
@@ -93,7 +94,7 @@ bool HuffmanTable::reset_table() {
           fill              = table_bits_;
 
           // Reverse the position bits
-          while (fill--) {
+          while ((fill--) != 0U) {
             leaf = (leaf << 1) | (reversed_position & 1);
             reversed_position >>= 1;
           }

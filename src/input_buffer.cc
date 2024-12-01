@@ -2,7 +2,7 @@
 // Assumes the file is composed of MSB uint16_t records.
 // Allows the caller to read any arbitrary number of bits in a single call.
 // Tracks current read position internally. Assumes sequential data access.
-#include "input_buffer.h"
+#include "input_buffer.hh"
 
 #include <fcntl.h>
 #include <sys/mman.h>
@@ -53,33 +53,22 @@ InputBuffer MmapInputBuffer::get() const {
   return InputBuffer(data_, filesize_);
 }
 
-uint8_t InputBuffer::read_byte() {
-  // less than 2 bytes available?
-  if (filesize_ <= current_position_) {
-    fputs("Read position out of range", stderr);
-    std::exit(1);
-  }
-
-  return data_[current_position_++];
-}
-
 uint16_t InputBuffer::read_word() {
   // less than 2 bytes available?
   if (filesize_ < (current_position_ + 2)) {
-    fputs("Read position out of range", stderr);
-    std::exit(1);
+    throw std::runtime_error("requested data out of range");
   }
 
-  uint16_t result = (data_[current_position_] << 8 | data_[current_position_ + 1]);
+  uint16_t result = (data_[current_position_] << 8) | (data_[current_position_ + 1]);
   current_position_ += 2;
 
   return result;
 }
 
-uint16_t InputBuffer::read_bits(size_t data_bits_requested) {
-  if (data_bits_requested > 16 || data_bits_requested == 0) {
-    fputs("Number of bits to read must be between 1 and 16", stderr);
-    std::exit(1);
+uint16_t InputBuffer::peek_bits(size_t data_bits_requested) {
+  if (data_bits_requested > 16) {
+    throw std::runtime_error(
+        std::format("number of bits to read: {} is greater than max: 16", data_bits_requested));
   }
 
   if (data_bits_available_ < data_bits_requested) {
@@ -89,7 +78,11 @@ uint16_t InputBuffer::read_bits(size_t data_bits_requested) {
 
   // Read N bits.
   // Turn data_bits_requested to a mask, e.g. "4" becomes "0b1111".
-  uint16_t result = (data_bits_ & ((1 << data_bits_requested) - 1));
+  return (data_bits_ & ((1 << data_bits_requested) - 1));
+}
+
+uint16_t InputBuffer::read_bits(size_t data_bits_requested) {
+  uint16_t result = peek_bits(data_bits_requested);
   // Consume bits.
   data_bits_ >>= data_bits_requested;
   data_bits_available_ -= data_bits_requested;

@@ -2,7 +2,7 @@
 
 #include <print>
 
-#include "unlzx.h"
+#include "unlzx.hh"
 
 auto main(int argc, char** argv) -> int {
   int    result = 0;

@@ -17,7 +17,7 @@
 /* pretty damn optimized. Don't try to understand this program.           */
 
 /* ---------------------------------------------------------------------- */
-#include "unlzx.h"
+#include "unlzx.hh"
 
 #include <sys/types.h>
 
