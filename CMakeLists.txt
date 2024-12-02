@@ -20,11 +20,13 @@ set(SOURCES
     src/huffman_decoder.cc
     src/huffman_table.cc
     src/input_buffer.cc
+    src/circular_buffer.cc
 )
 
 set(HEADERS
     src/unlzx.hh
     src/input_buffer.hh
+    src/circular_buffer.hh
 )
 
 add_library(unlzx_lib ${SOURCES} ${HEADERS})
