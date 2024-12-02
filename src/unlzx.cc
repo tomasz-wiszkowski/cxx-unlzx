@@ -113,6 +113,19 @@ auto ArchivedFileHeader::from_buffer(InputBuffer* buffer) -> std::unique_ptr<Arc
   return result;
 }
 
+std::string ArchivedFileHeader::attributes_str() const {
+  char attrs[9]  = "hsparwed";
+  char result[9] = "--------";
+
+  for (int i = 0; i < 8; i++) {
+    if ((attributes() & (1 << i)) != 0) {
+      result[7 - i] = attrs[7 - i];
+    }
+  }
+
+  return result;
+}
+
 static auto extract_normal(InputBuffer* in_file) -> void {
   unsigned char* pos   = nullptr;
   unsigned char* temp  = nullptr;
@@ -286,7 +299,7 @@ static auto list_archive(InputBuffer* in_file) -> void {
     merge_size += unpack_size;
 
     std::print("{:8} ", unpack_size);
-    if ((archive_header->flags() & 1) != 0) {
+    if (archive_header->is_merged()) {
       std::print("     n/a ");
     } else {
       std::print("{:8} ", pack_size);
@@ -295,23 +308,18 @@ static auto list_archive(InputBuffer* in_file) -> void {
     std::print("{:02}:{:02}:{:02} ", stamp.hour(), stamp.minute(), stamp.second());
     std::print("{:2}-{}-{:4} ", stamp.day(), month_str[stamp.month()], stamp.year());
 
-    std::print("{}{}{}{}{}{}{}{} ", ((attributes & 32) != 0) ? 'h' : '-',
-        ((attributes & 64) != 0) ? 's' : '-', ((attributes & 128) != 0) ? 'p' : '-',
-        ((attributes & 16) != 0) ? 'a' : '-', ((attributes & 1) != 0) ? 'r' : '-',
-        ((attributes & 2) != 0) ? 'w' : '-', ((attributes & 8) != 0) ? 'e' : '-',
-        ((attributes & 4) != 0) ? 'd' : '-');
+    std::print("{} ", archive_header->attributes_str());
     std::println("\"{}\"", archive_header->filename());
     if (!archive_header->comment().empty()) {
       std::println(": \"{}\"", archive_header->comment());
     }
-    if (((archive_header->flags() & 1) != 0) && (pack_size != 0U)) {
+
+    if (archive_header->is_merged() && (pack_size > 0)) {
       std::println("{:8} {:8} Merged", merge_size, pack_size);
     }
 
-    if (pack_size != 0U) { /* seek past the packed data */
-      merge_size = 0;
-      in_file->skip(pack_size);
-    }
+    merge_size = 0;
+    in_file->skip(pack_size);
   }
 
   std::println("-------- -------- -------- ----------- -------- ----");

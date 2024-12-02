@@ -190,6 +190,12 @@ class ArchivedFileHeader {
     return comment_;
   }
 
+  bool is_merged() const {
+    return (flags() & 1) != 0;
+  }
+
+  std::string attributes_str() const;
+
   static std::unique_ptr<ArchivedFileHeader> from_buffer(InputBuffer* buffer);
 };
 

@@ -26,10 +26,10 @@ constexpr uint32_t kCrc32ReversedPolynomial = bit_reverse(kCrc32Polynomial);
 static_assert(kCrc32ReversedPolynomial == 0xEDB88320);
 
 /// Generate a CRC32 polynomial table.
-/// 
+///
 /// This function generates a table of 256 CRC32 values based on the reversed CRC32 polynomial.
 /// The table is used to efficiently compute the CRC32 checksum of data.
-/// 
+///
 /// @return A constexpr std::array containing 256 CRC32 values.
 ///
 constexpr std::array<uint32_t, 256> generate_lookup_table() {
