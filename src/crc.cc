@@ -1,8 +1,9 @@
-#include <bit>
+#include "crc.hh"
+
+#include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
-
-#include "unlzx.hh"
 
 namespace crc {
 namespace {

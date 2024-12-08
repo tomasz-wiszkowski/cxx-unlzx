@@ -1,7 +1,7 @@
+#include "huffman_decoder.hh"
+
 #include <algorithm>
 #include <cstdint>
-
-#include "unlzx.hh"
 
 namespace huffman {
 namespace {

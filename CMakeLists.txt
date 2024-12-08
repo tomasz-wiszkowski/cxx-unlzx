@@ -15,18 +15,22 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fexceptions")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fexceptions")
 
 set(SOURCES
-    src/unlzx_crc.cc
-    src/unlzx.cc
+    src/circular_buffer.cc
+    src/crc.cc
     src/huffman_decoder.cc
     src/huffman_table.cc
-    src/input_buffer.cc
-    src/circular_buffer.cc
+    src/lzx_handle.cc
+    src/mmap_buffer.cc
+    src/unlzx.cc
 )
 
 set(HEADERS
-    src/unlzx.hh
-    src/input_buffer.hh
     src/circular_buffer.hh
+    src/crc.hh
+    src/huffman_decoder.hh
+    src/lzx_handle.hh
+    src/mmap_buffer.hh
+    src/unlzx.hh
 )
 
 add_library(unlzx_lib ${SOURCES} ${HEADERS})
@@ -40,10 +44,10 @@ enable_testing()
 
 find_package(GTest REQUIRED)
 add_executable(unlzx_test
-    src/unlzx_test.cc
-    src/unlzx_crc_test.cc
-    src/input_buffer_test.cc
     src/circular_buffer_test.cc
+    src/crc_test.cc
+    src/mmap_buffer_test.cc
+    src/unlzx_test.cc
 )
 target_include_directories(unlzx_test PRIVATE ${GTEST_INCLUDE_DIRS})
 target_link_libraries(unlzx_test PUBLIC GTest::GTest GTest::Main PRIVATE unlzx_lib)

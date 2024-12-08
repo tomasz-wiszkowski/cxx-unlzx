@@ -1,6 +1,7 @@
-#include <cstdint>
+#include "huffman_table.hh"
 
-#include "unlzx.hh"
+#include <cstdint>
+#include <stdexcept>
 
 namespace huffman {
 

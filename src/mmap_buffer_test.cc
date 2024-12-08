@@ -1,4 +1,4 @@
-#include "input_buffer.hh"
+#include "mmap_buffer.hh"
 
 #include <gtest/gtest.h>
 

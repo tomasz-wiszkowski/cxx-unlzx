@@ -2,7 +2,7 @@
 // Assumes the file is composed of MSB uint16_t records.
 // Allows the caller to read any arbitrary number of bits in a single call.
 // Tracks current read position internally. Assumes sequential data access.
-#include "input_buffer.hh"
+#include "mmap_buffer.hh"
 
 #include <fcntl.h>
 #include <sys/mman.h>
