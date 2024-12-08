@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstddef>
-#include <print>
 #include <span>
 #include <stdexcept>
 #include <vector>
@@ -20,27 +19,19 @@ class CircularBuffer {
     reset();
   }
 
-  void push(const T& value) {
+  template <typename U>
+  void push(U&& value) {
     if (is_full()) {
       throw std::runtime_error("Buffer overflow");
     }
-    buffer[tail] = value;
-    tail         = (tail + 1) % buffer.size();
-    full         = tail == head;
-  }
-
-  void push(T&& value) {
-    if (is_full()) {
-      throw std::runtime_error("Buffer overflow");
-    }
-    buffer[tail] = std::move(value);
+    buffer[tail] = std::forward<U>(value);
     tail         = (tail + 1) % buffer.size();
     full         = tail == head;
   }
 
   T pop() {
     if (is_empty()) {
-      throw std::runtime_error("Buffer is empty");
+      throw std::runtime_error("Buffer underflow");
     }
     T value = std::move(buffer[head]);
     head    = (head + 1) % buffer.size();
@@ -81,28 +72,33 @@ class CircularBuffer {
     return buffer.size();
   }
 
-  T& operator[](int32_t index) {
+  T& operator[](size_t index) {
     return buffer[(head + index) % buffer.size()];
   }
 
   std::vector<std::span<T>> read(size_t count) {
-    std::vector<std::span<T>> spans;
+    std::vector<std::span<T>> res;
+    if (count == 0) return res;
 
-    if (tail < head) {
-      size_t span_size = std::min(buffer.size() - head, count);
-      spans.emplace_back(buffer.begin() + head, buffer.begin() + head + span_size);
-      consume(span_size);
-      count -= span_size;
+    res = spans();
+    if (res.empty()) return res;
+
+    size_t consume_length = std::min(count, res[0].size());
+    res[0]                = res[0].subspan(0, consume_length);
+    consume(consume_length);
+    count -= consume_length;
+
+    if (res.size() > 1) {
+      size_t consume_length = std::min(count, res[1].size());
+      res[1]                = res[1].subspan(0, consume_length);
+      consume(consume_length);
+      count -= consume_length;
+      if (res[1].size() == 0) {
+        res.pop_back();
+      }
     }
 
-    if (count > 0) {
-      size_t span_size = std::min(tail - head, count);
-      spans.emplace_back(buffer.begin() + head, buffer.begin() + head + span_size);
-      consume(span_size);
-      count -= span_size;
-    }
-
-    return spans;
+    return res;
   }
 
   std::vector<std::span<T>> spans() {
@@ -126,12 +122,12 @@ class CircularBuffer {
     full = false;
   }
 
-  void repeat(int offset, size_t count) {
+  void repeat(size_t offset, size_t count) {
     if (offset > buffer.size()) {
       throw std::runtime_error("Buffer underflow");
     }
 
-    int32_t copy_from = (buffer.size() + tail - offset) % buffer.size();
+    size_t copy_from = (buffer.size() + tail - offset) % buffer.size();
 
     for (size_t i = 0; i < count; i++) {
       push(buffer[copy_from]);

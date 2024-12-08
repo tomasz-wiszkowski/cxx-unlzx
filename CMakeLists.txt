@@ -43,6 +43,7 @@ add_executable(unlzx_test
     src/unlzx_test.cc
     src/unlzx_crc_test.cc
     src/input_buffer_test.cc
+    src/circular_buffer_test.cc
 )
 target_include_directories(unlzx_test PRIVATE ${GTEST_INCLUDE_DIRS})
 target_link_libraries(unlzx_test PUBLIC GTest::GTest GTest::Main PRIVATE unlzx_lib)
