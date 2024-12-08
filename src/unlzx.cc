@@ -31,6 +31,8 @@
 #include <string>
 #include <utility>
 
+#include "circular_buffer.hh"
+
 /* ---------------------------------------------------------------------- */
 
 static const unsigned char kVersion[] = "$VER: unlzx 1.1 (03.4.01)";
@@ -127,19 +129,17 @@ std::string ArchivedFileHeader::attributes_str() const {
 }
 
 static auto extract_normal(InputBuffer* in_file) -> void {
-  unsigned char* pos   = nullptr;
-  unsigned char* temp  = nullptr;
-  unsigned int   count = 0;
+  unsigned char* temp = nullptr;
 
   huffman::HuffmanDecoder decoder;
 
   uint32_t unpack_size     = 0;
-  int64_t  decrunch_length = 0;
+  size_t   decrunch_length = 0;
 
   auto compressed_data = in_file->read_buffer(pack_size);
   pack_size            = 0;
 
-  pos = destination_end = destination = decrunch_buffer + 258 + 65536;
+  CircularBuffer<uint8_t> buffer(65536);
 
   while (!merged_files.empty()) {
     auto node = std::move(merged_files.front());
@@ -150,7 +150,7 @@ static auto extract_normal(InputBuffer* in_file) -> void {
 
     unpack_size = node->unpack_size();
     while (unpack_size > 0) {
-      if (pos == destination) {
+      if (buffer.is_empty()) {
         if (decrunch_length <= 0) {
           if (decoder.read_literal_table(&compressed_data) != 0) {
             break; /* argh! can't make huffman tables! */
@@ -158,39 +158,29 @@ static auto extract_normal(InputBuffer* in_file) -> void {
           decrunch_length = decoder.decrunch_length();
         }
 
-        /* unpack some data */
-        if (destination >= decrunch_buffer + 258 + 65536) {
-          count = destination - decrunch_buffer - 65536;
-          if (count != 0U) {
-            temp = (destination = decrunch_buffer) + 65536;
-            do { /* copy the overrun to the start of the buffer */
-              *destination++ = *temp++;
-            } while (--count != 0U);
+        buffer.set_fill_threshold(std::min(decrunch_length, size_t(65536 - 1024)));
+
+        decoder.decrunch(&compressed_data, &buffer);
+
+        size_t have_bytes = std::min(decrunch_length, buffer.size());
+        decrunch_length -= have_bytes;
+      }
+
+      auto spans = buffer.read(unpack_size);
+      for (auto& span : spans) {
+        /* calculate amount of data we can use before we need to fill the buffer again */
+        size_t count = std::min(span.size(), size_t(unpack_size));
+
+        crc::calc(span.data(), count);
+
+        if (out_file) {
+          if (fwrite(span.data(), 1, count, out_file.get()) != count) {
+            throw std::runtime_error(std::format("could not write file \"{}\"", node->filename()));
           }
-          pos = destination;
         }
-        destination_end = destination + decrunch_length;
-        destination_end = std::min(destination_end, decrunch_buffer + 258 + 65536);
-        temp            = destination;
 
-        decoder.decrunch(&compressed_data);
-
-        decrunch_length -= (destination - temp);
+        unpack_size -= count;
       }
-
-      /* calculate amount of data we can use before we need to fill the buffer again */
-      count = destination - pos;
-      count = std::min(count, unpack_size); /* take only what we need */
-
-      crc::calc(pos, count);
-
-      if (out_file) {
-        if (fwrite(pos, 1, count, out_file.get()) != count) {
-          throw std::runtime_error(std::format("could not write file \"{}\"", node->filename()));
-        }
-      }
-      unpack_size -= count;
-      pos += count;
     }
 
     std::println(" crc {}", (node->data_crc() == crc::sum()) ? "good" : "bad");

@@ -8,11 +8,8 @@
 #include <string>
 #include <vector>
 
+#include "circular_buffer.hh"
 #include "input_buffer.hh"
-
-extern uint8_t  decrunch_buffer[258 + 65536 + 258]; /* allow overrun for speed */
-extern uint8_t* destination;
-extern uint8_t* destination_end;
 
 enum class Action : uint8_t { View, Extract };
 
@@ -223,7 +220,7 @@ class HuffmanDecoder {
  public:
   HuffmanDecoder();
   int  read_literal_table(InputBuffer* data);
-  void decrunch(InputBuffer* data);
+  void decrunch(InputBuffer* data, CircularBuffer<uint8_t>* buffer);
 
   uint32_t decrunch_length() const {
     return decrunch_length_;
