@@ -135,13 +135,14 @@ int HuffmanDecoder::read_literal_table(InputBuffer* source) {
 /* and source buffers. Most of the time is spent in this routine so it's  */
 /* pretty damn optimized. */
 
-void HuffmanDecoder::decrunch(InputBuffer* source, CircularBuffer<uint8_t>* target) {
+void HuffmanDecoder::decrunch(
+    InputBuffer* source, CircularBuffer<uint8_t>* target, size_t threshold) {
   unsigned int   temp; /* could be a register */
   unsigned int   symbol;
   unsigned int   count;
   unsigned char* string;
 
-  while ((!target->fill_threshold_reached()) && (!source->is_eof())) {
+  while (target->size() < threshold && (!source->is_eof())) {
     uint32_t symbol_data = source->peek_bits(12);
     symbol               = literals_.table_[symbol_data];
 

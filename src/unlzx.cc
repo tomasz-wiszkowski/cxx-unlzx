@@ -47,10 +47,6 @@ static std::deque<std::unique_ptr<ArchivedFileHeader>> merged_files;
 
 /* ---------------------------------------------------------------------- */
 
-uint8_t  decrunch_buffer[258 + 65536 + 258]; /* allow overrun for speed */
-uint8_t* destination;
-uint8_t* destination_end;
-
 /* ---------------------------------------------------------------------- */
 
 static const char* month_str[16] = {"?00", "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug",
@@ -158,9 +154,7 @@ static auto extract_normal(InputBuffer* in_file) -> void {
           decrunch_length = decoder.decrunch_length();
         }
 
-        buffer.set_fill_threshold(std::min(decrunch_length, size_t(65536 - 1024)));
-
-        decoder.decrunch(&compressed_data, &buffer);
+        decoder.decrunch(&compressed_data, &buffer, std::min(decrunch_length, size_t(65536 - 256)));
 
         size_t have_bytes = std::min(decrunch_length, buffer.size());
         decrunch_length -= have_bytes;

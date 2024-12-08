@@ -15,7 +15,7 @@ class CircularBuffer {
   }
 
  public:
-  explicit CircularBuffer(size_t capacity) : buffer(capacity), buffer_full_threshold(capacity) {
+  explicit CircularBuffer(size_t capacity) : buffer(capacity) {
     reset();
   }
 
@@ -41,17 +41,6 @@ class CircularBuffer {
 
   bool is_empty() const {
     return !full && (head == tail);
-  }
-
-  void set_fill_threshold(size_t threshold) {
-    if (threshold > buffer.size()) {
-      throw std::runtime_error("Threshold exceeds buffer size");
-    }
-    buffer_full_threshold = threshold;
-  }
-
-  bool fill_threshold_reached() const {
-    return size() >= buffer_full_threshold;
   }
 
   bool is_full() const {
@@ -137,7 +126,6 @@ class CircularBuffer {
 
  private:
   std::vector<T> buffer;
-  size_t         buffer_full_threshold;
   size_t         head;
   size_t         tail;
   bool           full;

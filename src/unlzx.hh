@@ -220,7 +220,7 @@ class HuffmanDecoder {
  public:
   HuffmanDecoder();
   int  read_literal_table(InputBuffer* data);
-  void decrunch(InputBuffer* data, CircularBuffer<uint8_t>* buffer);
+  void decrunch(InputBuffer* data, CircularBuffer<uint8_t>* buffer, size_t max_decode_length);
 
   uint32_t decrunch_length() const {
     return decrunch_length_;
