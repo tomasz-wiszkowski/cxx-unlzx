@@ -213,13 +213,13 @@ class HuffmanTable {
   // The decode table.
   std::vector<uint16_t> table_;
 
-  bool reset_table();
+  void reset_table();
 };
 
 class HuffmanDecoder {
  public:
   HuffmanDecoder();
-  int  read_literal_table(InputBuffer* data);
+  void read_literal_table(InputBuffer* data);
   void decrunch(InputBuffer* data, CircularBuffer<uint8_t>* buffer, size_t max_decode_length);
 
   uint32_t decrunch_length() const {

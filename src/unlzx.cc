@@ -45,10 +45,6 @@ static unsigned int pack_size;
 
 static std::deque<std::unique_ptr<ArchivedFileHeader>> merged_files;
 
-/* ---------------------------------------------------------------------- */
-
-/* ---------------------------------------------------------------------- */
-
 static const char* month_str[16] = {"?00", "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug",
     "sep", "oct", "nov", "dec", "?13", "?14", "?15"};
 
@@ -59,7 +55,7 @@ static auto open_output(ArchivedFileHeader* node) -> std::unique_ptr<FILE, declt
   // Special case: create directory.
   if (node->unpack_size() == 0 && node->filename().ends_with("/")) {
     std::filesystem::create_directories(node->filename());
-    std::println("Creating directory \"{}\"", node->filename());
+    std::print("Creating directory \"{}\"", node->filename());
     return file;
   }
 
@@ -125,12 +121,9 @@ std::string ArchivedFileHeader::attributes_str() const {
 }
 
 static auto extract_normal(InputBuffer* in_file) -> void {
-  unsigned char* temp = nullptr;
-
   huffman::HuffmanDecoder decoder;
-
-  uint32_t unpack_size     = 0;
-  size_t   decrunch_length = 0;
+  uint32_t                unpack_size     = 0;
+  size_t                  decrunch_length = 0;
 
   auto compressed_data = in_file->read_buffer(pack_size);
   pack_size            = 0;
@@ -148,14 +141,11 @@ static auto extract_normal(InputBuffer* in_file) -> void {
     while (unpack_size > 0) {
       if (buffer.is_empty()) {
         if (decrunch_length <= 0) {
-          if (decoder.read_literal_table(&compressed_data) != 0) {
-            break; /* argh! can't make huffman tables! */
-          }
+          decoder.read_literal_table(&compressed_data);
           decrunch_length = decoder.decrunch_length();
         }
 
         decoder.decrunch(&compressed_data, &buffer, std::min(decrunch_length, size_t(65536 - 256)));
-
         size_t have_bytes = std::min(decrunch_length, buffer.size());
         decrunch_length -= have_bytes;
       }
@@ -178,7 +168,7 @@ static auto extract_normal(InputBuffer* in_file) -> void {
     }
 
     std::println(" crc {}", (node->data_crc() == crc::sum()) ? "good" : "bad");
-  } /* for */
+  }
 }
 
 /* ---------------------------------------------------------------------- */

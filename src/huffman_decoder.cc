@@ -1,6 +1,5 @@
 #include <algorithm>
 #include <cstdint>
-#include <print>
 
 #include "unlzx.hh"
 
@@ -26,7 +25,7 @@ constexpr uint8_t kSymbolLongerThanSixBits = 20;
 HuffmanDecoder::HuffmanDecoder()
     : offsets_(7, 8, 128), huffman20_(6, 20, 96), literals_(12, 768, 5120) {}
 
-int HuffmanDecoder::read_literal_table(InputBuffer* source) {
+void HuffmanDecoder::read_literal_table(InputBuffer* source) {
   uint32_t symbol;
   uint32_t pos;
   uint32_t count;
@@ -40,9 +39,7 @@ int HuffmanDecoder::read_literal_table(InputBuffer* source) {
   if (decrunch_method_ == 3) {
     std::generate(offsets_.bit_length_.begin(), offsets_.bit_length_.end(),
         [&source]() { return source->read_bits(3); });
-    if (!offsets_.reset_table()) {
-      return 1;  // Failure in building offset Huffman table
-    }
+    offsets_.reset_table();
   }
 
   // Read decrunch length
@@ -65,9 +62,7 @@ int HuffmanDecoder::read_literal_table(InputBuffer* source) {
     do {
       std::generate(huffman20_.bit_length_.begin(), huffman20_.bit_length_.end(),
           [&source]() { return source->read_bits(4); });
-      if (!huffman20_.reset_table()) {
-        throw std::runtime_error("Failure in building huffman lookup table");
-      }
+      huffman20_.reset_table();
 
       do {
         symbol = huffman20_.table_[source->peek_bits(6)];
@@ -121,12 +116,8 @@ int HuffmanDecoder::read_literal_table(InputBuffer* source) {
       max_symbol += 512;
     } while (max_symbol == 768);
 
-    if (!literals_.reset_table()) {
-      throw std::runtime_error("Failure in building huffman literal table");
-    }
+    literals_.reset_table();
   }
-
-  return 0;  // Success
 }
 
 /* ---------------------------------------------------------------------- */
@@ -137,10 +128,9 @@ int HuffmanDecoder::read_literal_table(InputBuffer* source) {
 
 void HuffmanDecoder::decrunch(
     InputBuffer* source, CircularBuffer<uint8_t>* target, size_t threshold) {
-  unsigned int   temp; /* could be a register */
-  unsigned int   symbol;
-  unsigned int   count;
-  unsigned char* string;
+  uint32_t temp;
+  uint32_t symbol;
+  uint32_t count;
 
   while (target->size() < threshold && (!source->is_eof())) {
     uint32_t symbol_data = source->peek_bits(12);
