@@ -44,12 +44,10 @@ static const unsigned char kVersion[] = "$VER: unlzx 1.1 (03.4.01)";
 
 static unsigned char info_header[10];
 
-static size_t pack_size;
-
-static std::deque<std::unique_ptr<ArchivedFileHeader>> merged_files;
+static std::deque<std::unique_ptr<lzx::Entry>> merged_files;
 
 /* Opens a file for writing & creates the full path if required. */
-static auto open_output(ArchivedFileHeader* node) -> std::unique_ptr<FILE, decltype(&std::fclose)> {
+static auto open_output(lzx::Entry* node) -> std::unique_ptr<FILE, decltype(&std::fclose)> {
   std::unique_ptr<FILE, decltype(&std::fclose)> file(nullptr, &std::fclose);
 
   // Special case: create directory.
@@ -85,13 +83,10 @@ static auto open_output(ArchivedFileHeader* node) -> std::unique_ptr<FILE, declt
 
 /* ---------------------------------------------------------------------- */
 
-static auto extract_normal(InputBuffer* in_file) -> void {
+static auto extract_normal(InputBuffer in_file) -> void {
   huffman::HuffmanDecoder decoder;
   uint32_t                unpack_size     = 0;
   size_t                  decrunch_length = 0;
-
-  auto compressed_data = in_file->read_buffer(pack_size);
-  pack_size            = 0;
 
   CircularBuffer<uint8_t> buffer(65536);
 
@@ -106,11 +101,11 @@ static auto extract_normal(InputBuffer* in_file) -> void {
     while (unpack_size > 0) {
       if (buffer.is_empty()) {
         if (decrunch_length <= 0) {
-          decoder.read_literal_table(&compressed_data);
+          decoder.read_literal_table(&in_file);
           decrunch_length = decoder.decrunch_length();
         }
 
-        decoder.decrunch(&compressed_data, &buffer, std::min(decrunch_length, size_t(65536 - 256)));
+        decoder.decrunch(&in_file, &buffer, std::min(decrunch_length, size_t(65536 - 256)));
         size_t have_bytes = std::min(decrunch_length, buffer.size());
         decrunch_length -= have_bytes;
       }
@@ -138,14 +133,14 @@ static auto extract_normal(InputBuffer* in_file) -> void {
 
 /* ---------------------------------------------------------------------- */
 
-static auto extract_store(InputBuffer* in_file) -> void {
+static auto extract_store(InputBuffer in_file) -> void {
   while (!merged_files.empty()) {
     auto node = std::move(merged_files.front());
     merged_files.pop_front();
 
-    uint32_t unpack_size = std::min(pack_size, node->unpack_size());
+    uint32_t unpack_size = std::min(in_file.available(), node->unpack_size());
 
-    auto view     = in_file->read_span(unpack_size);
+    auto view     = in_file.read_span(unpack_size);
     auto out_file = open_output(node.get());
     auto written  = 0;
 
@@ -160,8 +155,6 @@ static auto extract_store(InputBuffer* in_file) -> void {
     crc::reset();
     crc::calc(view.data(), view.size());
     std::println(" crc {}", (node->data_crc() == crc::sum()) ? "good" : "bad");
-
-    pack_size -= view.size();
   }
 }
 
@@ -177,37 +170,36 @@ static auto report_unknown() -> void {
 
 /* ---------------------------------------------------------------------- */
 
-static auto extract_archive(InputBuffer* in_file) -> void {
-  while (auto archive_header = ArchivedFileHeader::from_buffer(in_file)) {
-    pack_size             = archive_header->pack_size();
-    auto compression_type = archive_header->pack_mode().compression_type();
+static auto extract_archive(InputBuffer in_file) -> void {
+  while (auto archive_header = lzx::Entry::from_buffer(&in_file)) {
+    size_t pack_size        = archive_header->pack_size();
+    auto   compression_type = archive_header->compression_info().mode();
 
     merged_files.emplace_back(std::move(archive_header));
 
     // Unpack merged files.
     if (pack_size != 0U) {
       switch (compression_type) {
-      case ArchivedPackMode::kCompressionNone:
-        extract_store(in_file);
+      case lzx::CompressionInfo::Mode::kNone:
+        extract_store(in_file.read_buffer(pack_size));
         break;
 
-      case ArchivedPackMode::kCompressionNormal:
-        extract_normal(in_file);
+      case lzx::CompressionInfo::Mode::kNormal:
+        extract_normal(in_file.read_buffer(pack_size));
         break;
 
       default:
         report_unknown();
+        in_file.skip(pack_size);
         break;
       }
-
-      in_file->skip(pack_size);
     }
   }
 }
 
 /* ---------------------------------------------------------------------- */
 
-static auto list_archive(InputBuffer* in_file) -> void {
+static auto list_archive(InputBuffer in_file) -> void {
   size_t total_pack   = 0;
   size_t total_unpack = 0;
   size_t total_files  = 0;
@@ -216,11 +208,11 @@ static auto list_archive(InputBuffer* in_file) -> void {
   std::println("Unpacked Packed   Time     Date       Attrib   Name");
   std::println("-------- -------- -------- ---------- -------- ----");
 
-  while (auto archive_header = ArchivedFileHeader::from_buffer(in_file)) {
-    uint32_t unpack_size = archive_header->unpack_size();
-    pack_size            = archive_header->pack_size();
-    const auto& stamp    = archive_header->datestamp();
-    const auto& attrs    = archive_header->attributes();
+  while (auto archive_header = lzx::Entry::from_buffer(&in_file)) {
+    uint32_t    unpack_size = archive_header->unpack_size();
+    size_t      pack_size   = archive_header->pack_size();
+    const auto& stamp       = archive_header->datestamp();
+    const auto& attrs       = archive_header->attributes();
 
     total_pack += pack_size;
     total_unpack += unpack_size;
@@ -228,7 +220,7 @@ static auto list_archive(InputBuffer* in_file) -> void {
     merge_size += unpack_size;
 
     std::print("{:8} ", unpack_size);
-    if (archive_header->is_merged()) {
+    if (archive_header->flags().is_merged()) {
       std::print("     n/a ");
     } else {
       std::print("{:8} ", pack_size);
@@ -241,12 +233,12 @@ static auto list_archive(InputBuffer* in_file) -> void {
       std::println(": \"{}\"", archive_header->comment());
     }
 
-    if (archive_header->is_merged() && (pack_size > 0)) {
+    if (archive_header->flags().is_merged() && (pack_size > 0)) {
       std::println("{:8} {:8} Merged", merge_size, pack_size);
+      merge_size = 0;
     }
 
-    merge_size = 0;
-    in_file->skip(pack_size);
+    in_file.skip(pack_size);
   }
 
   std::println("-------- -------- -------- ---------- -------- ----");
@@ -272,11 +264,11 @@ auto process_archive(char* filename, Action action) -> void {
 
   switch (action) {
   case Action::Extract:
-    extract_archive(&in_buffer);
+    extract_archive(in_buffer);
     break;
 
   case Action::View:
-    list_archive(&in_buffer);
+    list_archive(in_buffer);
     break;
   }
 }

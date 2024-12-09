@@ -2,39 +2,25 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <format>
 #include <memory>
 
 #include "mmap_buffer.hh"
+#include "types.hh"
 
-template<typename T>
-constexpr static T big_data_to_host(T data) {
-  if constexpr (std::endian::native == std::endian::big) {
-    return data;
-  } else {
-    return std::byteswap(data);
-  }
-}
-
-template<typename T>
-constexpr static T data_to_host(T data) {
-  if constexpr (std::endian::native == std::endian::little) {
-    return data;
-  } else {
-    return std::byteswap(data);
-  }
-}
-
+namespace lzx {
+/// @brief A bitfield representing the protection bits of a file.
 union ProtectionBits {
   uint8_t raw;
   struct {
-    uint8_t r : 1;  // Read
-    uint8_t w : 1;  // Write
-    uint8_t d : 1;  // Delete
-    uint8_t e : 1;  // Execute
-    uint8_t a : 1;  // Archive
-    uint8_t h : 1;  // Hidden
-    uint8_t s : 1;  // Script
-    uint8_t p : 1;  // Pure
+    uint8_t readable : 1;
+    uint8_t writable : 1;
+    uint8_t deletable : 1;
+    uint8_t executable : 1;
+    uint8_t archived : 1;
+    uint8_t hidden : 1;
+    uint8_t script : 1;
+    uint8_t pure : 1;
   };
 
   ProtectionBits() : raw(0) {}
@@ -42,167 +28,107 @@ union ProtectionBits {
 } __attribute__((packed));
 static_assert(sizeof(ProtectionBits) == 1);
 
-// Custom formatter for ProtectionBits
-template <>
-struct std::formatter<ProtectionBits> : std::formatter<std::string_view> {
-  template <typename FormatContext>
-  auto format(ProtectionBits bits, FormatContext& ctx) const {
-    std::string result = "--------";
-    if (bits.h) result[0] = 'h';
-    if (bits.s) result[1] = 's';
-    if (bits.p) result[2] = 'p';
-    if (bits.a) result[3] = 'a';
-    if (bits.r) result[4] = 'r';
-    if (bits.w) result[5] = 'w';
-    if (bits.e) result[6] = 'e';
-    if (bits.d) result[7] = 'd';
 
-    return formatter<std::string_view>::format(std::move(result), ctx);
-  }
-};
+/// @brief A datestamp representing the date and time stamp of a file.
+class DateStamp {
+  union DateStampInternal {
+    typedef uint32_t RealType;
 
+    RealType raw;
 
-class ArchivedDateStamp {
-  uint32_t stamp_;
+    struct {
+      uint32_t seconds : 6;
+      uint32_t minutes : 6;
+      uint32_t hours : 5;
+      uint32_t year : 6;
+      uint32_t month : 4;
+      uint32_t day : 5;
+    };
 
-  static constexpr uint32_t kShiftSeconds = 0;
-  static constexpr uint32_t kBitsSeconds  = 6;
-  static constexpr uint32_t kMaskSeconds  = (1 << kBitsSeconds) - 1;
+    DateStampInternal(RealType from) : raw(from) {}
+  };
 
-  static constexpr uint32_t kShiftMinutes = kShiftSeconds + kBitsSeconds;
-  static constexpr uint32_t kBitsMinutes  = 6;
-  static constexpr uint32_t kMaskMinutes  = (1 << kBitsMinutes) - 1;
-
-  static constexpr uint32_t kShiftHours = kShiftMinutes + kBitsMinutes;
-  static constexpr uint32_t kBitsHours  = 5;
-  static constexpr uint32_t kMaskHours  = (1 << kBitsHours) - 1;
-
-  static constexpr uint32_t kShiftYear = kShiftHours + kBitsHours;
-  static constexpr uint32_t kBitsYear  = 6;
-  static constexpr uint32_t kMaskYear  = (1 << kBitsYear) - 1;
-
-  static constexpr uint32_t kShiftMonth = kShiftYear + kBitsYear;
-  static constexpr uint32_t kBitsMonth  = 4;
-  static constexpr uint32_t kMaskMonth  = (1 << kBitsMonth) - 1;
-
-  static constexpr uint32_t kShiftDay = kShiftMonth + kBitsMonth;
-  static constexpr uint32_t kBitsDay  = 5;
-  static constexpr uint32_t kMaskDay  = (1 << kBitsDay) - 1;
-
-  static_assert(kShiftDay + kBitsDay == 32);
+  TypedValue<DateStampInternal, std::endian::big> stamp_;
 
  public:
-  constexpr uint32_t raw() const {
-    return big_data_to_host(stamp_);
-  }
-
   constexpr uint32_t year() const {
-    return ((raw() >> kShiftYear) & kMaskYear) + 1970;
+    return stamp_.value().year + 1970;
   }
 
   constexpr uint32_t month() const {
-    return (raw() >> kShiftMonth) & kMaskMonth;
+    return stamp_.value().month;
   }
 
   constexpr uint32_t day() const {
-    return (raw() >> kShiftDay) & kMaskDay;
+    return stamp_.value().day;
   }
 
   constexpr uint32_t hour() const {
-    return (raw() >> kShiftHours) & kMaskHours;
+    return stamp_.value().hours;
   }
 
   constexpr uint32_t minute() const {
-    return (raw() >> kShiftMinutes) & kMaskMinutes;
+    return stamp_.value().minutes;
   }
 
   constexpr uint32_t second() const {
-    return (raw() >> kShiftSeconds) & kMaskSeconds;
+    return stamp_.value().seconds;
   }
 } __attribute__((packed));
-
-static_assert(sizeof(ArchivedDateStamp) == 4);
-
-// Custom formatter for ArchivedDateStamp
-template <>
-struct std::formatter<ArchivedDateStamp> : std::formatter<std::string_view> {
-  bool date = false;
-  bool time = false;
-
-  template <class ParseContext>
-  constexpr ParseContext::iterator parse(ParseContext& ctx) {
-    auto it = ctx.begin();
-
-    while (it != ctx.end() && *it != '}') {
-      switch (*it++) {
-      case 'd':
-        date = true;
-        break;
-
-      case 't':
-        time = true;
-        break;
-      }
-    }
-
-    return it;
-  }
-
-  template <typename FormatContext>
-  auto format(const ArchivedDateStamp& stamp, FormatContext& ctx) const {
-    if (time) {
-      formatter<std::string_view>::format(
-          std::format("{:02}:{:02}:{:02}", stamp.hour(), stamp.minute(), stamp.second()), ctx);
-    }
-
-    if (date && time) {
-      formatter<std::string_view>::format(" ", ctx);
-    }
-
-    if (date) {
-      formatter<std::string_view>::format(
-          std::format("{:02}-{:02}-{:4}", stamp.day(), stamp.month(), stamp.year()), ctx);
-    }
-
-    return ctx.out();
-  }
-};
+static_assert(sizeof(DateStamp) == 4);
 
 
-class ArchivedPackMode {
-  uint8_t type_;
-
+class CompressionInfo {
  public:
-  static constexpr const uint8_t kCompressionNone   = 0;
-  static constexpr const uint8_t kCompressionNormal = 2;
+  enum class Mode : uint8_t {
+    kNone   = 0,
+    kNormal = 2,
+  };
 
-  constexpr uint8_t compression_type() const {
-    // Unclear what the actual bitmask is.
-    return (type_ & 0x1f);
+  constexpr Mode mode() const {
+    return mode_;
   }
+
+ private:
+  Mode    mode_ : 5;  // Guessed.
+  uint8_t reserved_ : 3;
+
 } __attribute__((packed));
+static_assert(sizeof(CompressionInfo) == 1);
 
-static_assert(sizeof(ArchivedPackMode) == 1);
+
+class Flags {
+ public:
+  constexpr bool is_merged() const {
+    return merged_;
+  }
+
+ private:
+  uint8_t merged_ : 1;
+  uint8_t reserved_ : 7;
+
+} __attribute__((packed));
+static_assert(sizeof(CompressionInfo) == 1);
 
 
-class ArchivedFileHeader {
+class Entry {
  private:
   struct {
-    ProtectionBits    attributes_;       // File protection modes
-    uint8_t           reserved1_;        // Reserved
-    uint32_t          unpack_size_;      // Unpacked size
-    uint32_t          pack_size_;        // Packed size
-    uint8_t           machine_type_;     // Machine type
-    ArchivedPackMode  pack_mode_;        // Pack mode
-    uint8_t           flags_;            // Flags
-    uint8_t           reserved2_;        // Reserved
-    uint8_t           comment_length_;   // Comment length
-    uint8_t           extract_ver_;      // Version needed to extract
-    uint8_t           reserved3_[2];     // Reserved
-    ArchivedDateStamp date_;             // Packed date
-    uint32_t          data_crc_;         // Data CRC
-    uint32_t          header_crc_;       // Header CRC
-    uint8_t           filename_length_;  // Filename length
+    ProtectionBits                       attributes_;        // File protection modes
+    uint8_t                              reserved1_;         // Reserved
+    Value<uint32_t, std::endian::little> unpack_size_;       // Unpacked size
+    Value<uint32_t, std::endian::little> pack_size_;         // Packed size
+    uint8_t                              machine_type_;      // Machine type
+    CompressionInfo                      compression_info_;  // Compression info
+    Flags                                flags_;             // Flags
+    uint8_t                              reserved2_;         // Reserved
+    uint8_t                              comment_length_;    // Comment length
+    uint8_t                              extract_ver_;       // Version needed to extract
+    uint8_t                              reserved3_[2];      // Reserved
+    DateStamp                            date_;              // Packed date
+    Value<uint32_t, std::endian::little> data_crc_;          // Data CRC
+    Value<uint32_t, std::endian::little> header_crc_;        // Header CRC
+    uint8_t                              filename_length_;   // Filename length
   } __attribute__((packed)) metadata_;
 
   static_assert(sizeof(metadata_) == 31);
@@ -211,47 +137,31 @@ class ArchivedFileHeader {
   std::string comment_;
 
  public:
-  void clear_header_crc() {
-    metadata_.header_crc_ = 0;
-  }
-
   constexpr size_t unpack_size() const {
-    return data_to_host(metadata_.unpack_size_);
+    return metadata_.unpack_size_.value();
   }
 
   constexpr size_t pack_size() const {
-    return data_to_host(metadata_.pack_size_);
+    return metadata_.pack_size_.value();
   }
 
-  constexpr const ArchivedDateStamp& datestamp() const {
+  constexpr const DateStamp& datestamp() const {
     return metadata_.date_;
   }
 
   constexpr uint32_t data_crc() const {
-    return data_to_host(metadata_.data_crc_);
+    return metadata_.data_crc_.value();
   }
 
-  constexpr uint32_t header_crc() const {
-    return data_to_host(metadata_.header_crc_);
-  }
-
-  constexpr const ArchivedPackMode& pack_mode() const {
-    return metadata_.pack_mode_;
-  }
-
-  constexpr size_t filename_length() const {
-    return metadata_.filename_length_;
-  }
-
-  constexpr size_t comment_length() const {
-    return metadata_.comment_length_;
+  constexpr CompressionInfo compression_info() const {
+    return metadata_.compression_info_;
   }
 
   constexpr ProtectionBits attributes() const {
     return metadata_.attributes_;
   }
 
-  constexpr uint8_t flags() const {
+  constexpr Flags flags() const {
     return metadata_.flags_;
   }
 
@@ -263,9 +173,75 @@ class ArchivedFileHeader {
     return comment_;
   }
 
-  bool is_merged() const {
-    return (flags() & 1) != 0;
+  static std::unique_ptr<Entry> from_buffer(InputBuffer* buffer);
+};
+
+}  // namespace lzx
+
+
+/// @brief A custom formatter for ProtectionBits.
+template <>
+struct std::formatter<lzx::ProtectionBits> : std::formatter<std::string_view> {
+  template <typename FormatContext>
+  auto format(lzx::ProtectionBits bits, FormatContext& ctx) const {
+    std::string result = "--------";
+    if (bits.hidden) result[0] = 'h';
+    if (bits.script) result[1] = 's';
+    if (bits.pure) result[2] = 'p';
+    if (bits.archived) result[3] = 'a';
+    if (bits.readable) result[4] = 'r';
+    if (bits.writable) result[5] = 'w';
+    if (bits.executable) result[6] = 'e';
+    if (bits.deletable) result[7] = 'd';
+
+    return formatter<std::string_view>::format(std::move(result), ctx);
+  }
+};
+
+/// @brief A custom formatter for DateStamp.
+template <>
+struct std::formatter<lzx::DateStamp> : std::formatter<std::string_view> {
+  enum class Format : uint8_t {
+    kDate,
+    kTime,
+  };
+
+  Format format_ = Format::kDate;
+
+  template <class ParseContext>
+  constexpr ParseContext::iterator parse(ParseContext& ctx) {
+    auto it = ctx.begin();
+
+    while (it != ctx.end() && *it != '}') {
+      char format = *it++;
+      switch (format) {
+      case 'd':  // {:d} -- display date.
+        format_ = Format::kDate;
+        break;
+
+      case 't':  // {:t} -- display time.
+        format_ = Format::kTime;
+        break;
+      }
+    }
+
+    return it;
   }
 
-  static std::unique_ptr<ArchivedFileHeader> from_buffer(InputBuffer* buffer);
+  template <typename FormatContext>
+  auto format(const lzx::DateStamp& stamp, FormatContext& ctx) const {
+    switch (format_) {
+    case Format::kTime:
+      formatter<std::string_view>::format(
+          std::format("{:02}:{:02}:{:02}", stamp.hour(), stamp.minute(), stamp.second()), ctx);
+      break;
+
+    case Format::kDate:
+      formatter<std::string_view>::format(
+          std::format("{:02}-{:02}-{:4}", stamp.day(), stamp.month(), stamp.year()), ctx);
+      break;
+    }
+
+    return ctx.out();
+  }
 };

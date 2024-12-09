@@ -17,6 +17,9 @@ class InputBuffer {
   std::span<const uint8_t> read_span(size_t length);
   InputBuffer              read_buffer(size_t length);
   size_t                   skip(size_t length);
+  size_t                   available() const {
+    return filesize_ - current_position_;
+  }
 
   bool is_eof() const;
 

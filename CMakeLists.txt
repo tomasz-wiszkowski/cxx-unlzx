@@ -30,6 +30,7 @@ set(HEADERS
     src/huffman_decoder.hh
     src/lzx_handle.hh
     src/mmap_buffer.hh
+    src/types.hh
     src/unlzx.hh
 )
 

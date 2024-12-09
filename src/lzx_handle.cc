@@ -5,16 +5,18 @@
 
 #include "crc.hh"
 
-auto ArchivedFileHeader::from_buffer(InputBuffer* buffer) -> std::unique_ptr<ArchivedFileHeader> {
+namespace lzx {
+
+auto Entry::from_buffer(InputBuffer* buffer) -> std::unique_ptr<Entry> {
   if (buffer->is_eof()) return {};
 
-  auto result = std::make_unique<ArchivedFileHeader>();
+  auto result = std::make_unique<Entry>();
   buffer->read_into(&result->metadata_, sizeof(result->metadata_));
 
-  uint32_t const header_crc = result->header_crc();
-  result->clear_header_crc();
-  result->filename_ = buffer->read_string_view(result->filename_length());
-  result->comment_  = buffer->read_string_view(result->comment_length());
+  uint32_t const header_crc     = result->metadata_.header_crc_.value();
+  result->metadata_.header_crc_ = 0;
+  result->filename_             = buffer->read_string_view(result->metadata_.filename_length_);
+  result->comment_              = buffer->read_string_view(result->metadata_.comment_length_);
 
   crc::reset();
   crc::calc(&result->metadata_, sizeof(result->metadata_));
@@ -51,3 +53,5 @@ enum : uint8_t {
   HDR_TYPE_AMIGA   = 10,
   HDR_TYPE_UNIX    = 20
 };
+
+}  // namespace lzx
