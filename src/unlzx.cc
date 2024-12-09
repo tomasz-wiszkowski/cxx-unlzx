@@ -44,12 +44,9 @@ static const unsigned char kVersion[] = "$VER: unlzx 1.1 (03.4.01)";
 
 static unsigned char info_header[10];
 
-static unsigned int pack_size;
+static size_t pack_size;
 
 static std::deque<std::unique_ptr<ArchivedFileHeader>> merged_files;
-
-static const char* month_str[16] = {"?00", "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug",
-    "sep", "oct", "nov", "dec", "?13", "?14", "?15"};
 
 /* Opens a file for writing & creates the full path if required. */
 static auto open_output(ArchivedFileHeader* node) -> std::unique_ptr<FILE, decltype(&std::fclose)> {
@@ -181,12 +178,7 @@ static auto report_unknown() -> void {
 /* ---------------------------------------------------------------------- */
 
 static auto extract_archive(InputBuffer* in_file) -> void {
-  for (;;) {
-    auto archive_header = ArchivedFileHeader::from_buffer(in_file);
-    if (!archive_header) {
-      break;
-    }
-
+  while (auto archive_header = ArchivedFileHeader::from_buffer(in_file)) {
     pack_size             = archive_header->pack_size();
     auto compression_type = archive_header->pack_mode().compression_type();
 
@@ -216,24 +208,19 @@ static auto extract_archive(InputBuffer* in_file) -> void {
 /* ---------------------------------------------------------------------- */
 
 static auto list_archive(InputBuffer* in_file) -> void {
-  unsigned int total_pack   = 0;
-  unsigned int total_unpack = 0;
-  unsigned int total_files  = 0;
-  unsigned int merge_size   = 0;
+  size_t total_pack   = 0;
+  size_t total_unpack = 0;
+  size_t total_files  = 0;
+  size_t merge_size   = 0;
 
-  std::println("Unpacked   Packed Time     Date        Attrib   Name");
-  std::println("-------- -------- -------- ----------- -------- ----");
+  std::println("Unpacked Packed   Time     Date       Attrib   Name");
+  std::println("-------- -------- -------- ---------- -------- ----");
 
-  for (;;) {
-    auto archive_header = ArchivedFileHeader::from_buffer(in_file);
-    if (!archive_header) {
-      break;
-    }
-
-    uint8_t const attributes  = archive_header->attributes(); /* file protection modes */
-    uint32_t      unpack_size = archive_header->unpack_size();
-    pack_size                 = archive_header->pack_size();
-    const auto& stamp         = archive_header->datestamp();
+  while (auto archive_header = ArchivedFileHeader::from_buffer(in_file)) {
+    uint32_t unpack_size = archive_header->unpack_size();
+    pack_size            = archive_header->pack_size();
+    const auto& stamp    = archive_header->datestamp();
+    const auto& attrs    = archive_header->attributes();
 
     total_pack += pack_size;
     total_unpack += unpack_size;
@@ -247,10 +234,8 @@ static auto list_archive(InputBuffer* in_file) -> void {
       std::print("{:8} ", pack_size);
     }
 
-    std::print("{:02}:{:02}:{:02} ", stamp.hour(), stamp.minute(), stamp.second());
-    std::print("{:2}-{}-{:4} ", stamp.day(), month_str[stamp.month()], stamp.year());
+    std::print("{0:t} {0:d} {1} ", stamp, attrs);
 
-    std::print("{} ", archive_header->attributes_str());
     std::println("\"{}\"", archive_header->filename());
     if (!archive_header->comment().empty()) {
       std::println(": \"{}\"", archive_header->comment());
@@ -264,7 +249,7 @@ static auto list_archive(InputBuffer* in_file) -> void {
     in_file->skip(pack_size);
   }
 
-  std::println("-------- -------- -------- ----------- -------- ----");
+  std::println("-------- -------- -------- ---------- -------- ----");
   std::print("{:8} {:8} ", total_unpack, total_pack);
   std::println("{} file{}", total_files, ((total_files == 1) ? "" : "s"));
 }

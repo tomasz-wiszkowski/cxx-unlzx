@@ -1,5 +1,8 @@
 #include "lzx_handle.hh"
 
+#include <format>
+#include <iostream>
+
 #include "crc.hh"
 
 auto ArchivedFileHeader::from_buffer(InputBuffer* buffer) -> std::unique_ptr<ArchivedFileHeader> {
@@ -24,18 +27,6 @@ auto ArchivedFileHeader::from_buffer(InputBuffer* buffer) -> std::unique_ptr<Arc
   return result;
 }
 
-std::string ArchivedFileHeader::attributes_str() const {
-  char attrs[9]  = "hsparwed";
-  char result[9] = "--------";
-
-  for (int i = 0; i < 8; i++) {
-    if ((attributes() & (1 << i)) != 0) {
-      result[7 - i] = attrs[7 - i];
-    }
-  }
-
-  return result;
-}
 
 /* ---------------------------------------------------------------------- */
 
@@ -52,17 +43,6 @@ enum : uint8_t { INFO_DAMAGE_PROTECT = 1, INFO_FLAG_LOCKED = 2 };
      } *//* SIZE = 10 */
 
 enum : uint8_t { HDR_FLAG_MERGED = 1 };
-
-enum : uint8_t {
-  HDR_PROT_READ    = 1,
-  HDR_PROT_WRITE   = 2,
-  HDR_PROT_DELETE  = 4,
-  HDR_PROT_EXECUTE = 8,
-  HDR_PROT_ARCHIVE = 16,
-  HDR_PROT_HOLD    = 32,
-  HDR_PROT_SCRIPT  = 64,
-  HDR_PROT_PURE    = 128
-};
 
 enum : uint8_t {
   HDR_TYPE_MSDOS   = 0,

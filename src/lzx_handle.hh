@@ -6,7 +6,8 @@
 
 #include "mmap_buffer.hh"
 
-constexpr static uint32_t big_data_to_host(uint32_t data) {
+template<typename T>
+constexpr static T big_data_to_host(T data) {
   if constexpr (std::endian::native == std::endian::big) {
     return data;
   } else {
@@ -14,7 +15,8 @@ constexpr static uint32_t big_data_to_host(uint32_t data) {
   }
 }
 
-constexpr static uint32_t data_to_host(uint32_t data) {
+template<typename T>
+constexpr static T data_to_host(T data) {
   if constexpr (std::endian::native == std::endian::little) {
     return data;
   } else {
@@ -25,18 +27,40 @@ constexpr static uint32_t data_to_host(uint32_t data) {
 union ProtectionBits {
   uint8_t raw;
   struct {
-    uint8_t h : 1;
-    uint8_t s : 1;
-    uint8_t p : 1;
-    uint8_t a : 1;
-    uint8_t r : 1;
-    uint8_t w : 1;
-    uint8_t e : 1;
-    uint8_t d : 1;
+    uint8_t r : 1;  // Read
+    uint8_t w : 1;  // Write
+    uint8_t d : 1;  // Delete
+    uint8_t e : 1;  // Execute
+    uint8_t a : 1;  // Archive
+    uint8_t h : 1;  // Hidden
+    uint8_t s : 1;  // Script
+    uint8_t p : 1;  // Pure
   };
-} __attribute__((packed));
 
+  ProtectionBits() : raw(0) {}
+  explicit ProtectionBits(uint8_t from) : raw(from) {}
+} __attribute__((packed));
 static_assert(sizeof(ProtectionBits) == 1);
+
+// Custom formatter for ProtectionBits
+template <>
+struct std::formatter<ProtectionBits> : std::formatter<std::string_view> {
+  template <typename FormatContext>
+  auto format(ProtectionBits bits, FormatContext& ctx) const {
+    std::string result = "--------";
+    if (bits.h) result[0] = 'h';
+    if (bits.s) result[1] = 's';
+    if (bits.p) result[2] = 'p';
+    if (bits.a) result[3] = 'a';
+    if (bits.r) result[4] = 'r';
+    if (bits.w) result[5] = 'w';
+    if (bits.e) result[6] = 'e';
+    if (bits.d) result[7] = 'd';
+
+    return formatter<std::string_view>::format(std::move(result), ctx);
+  }
+};
+
 
 class ArchivedDateStamp {
   uint32_t stamp_;
@@ -99,6 +123,52 @@ class ArchivedDateStamp {
 
 static_assert(sizeof(ArchivedDateStamp) == 4);
 
+// Custom formatter for ArchivedDateStamp
+template <>
+struct std::formatter<ArchivedDateStamp> : std::formatter<std::string_view> {
+  bool date = false;
+  bool time = false;
+
+  template <class ParseContext>
+  constexpr ParseContext::iterator parse(ParseContext& ctx) {
+    auto it = ctx.begin();
+
+    while (it != ctx.end() && *it != '}') {
+      switch (*it++) {
+      case 'd':
+        date = true;
+        break;
+
+      case 't':
+        time = true;
+        break;
+      }
+    }
+
+    return it;
+  }
+
+  template <typename FormatContext>
+  auto format(const ArchivedDateStamp& stamp, FormatContext& ctx) const {
+    if (time) {
+      formatter<std::string_view>::format(
+          std::format("{:02}:{:02}:{:02}", stamp.hour(), stamp.minute(), stamp.second()), ctx);
+    }
+
+    if (date && time) {
+      formatter<std::string_view>::format(" ", ctx);
+    }
+
+    if (date) {
+      formatter<std::string_view>::format(
+          std::format("{:02}-{:02}-{:4}", stamp.day(), stamp.month(), stamp.year()), ctx);
+    }
+
+    return ctx.out();
+  }
+};
+
+
 class ArchivedPackMode {
   uint8_t type_;
 
@@ -145,11 +215,11 @@ class ArchivedFileHeader {
     metadata_.header_crc_ = 0;
   }
 
-  constexpr uint32_t unpack_size() const {
+  constexpr size_t unpack_size() const {
     return data_to_host(metadata_.unpack_size_);
   }
 
-  constexpr uint32_t pack_size() const {
+  constexpr size_t pack_size() const {
     return data_to_host(metadata_.pack_size_);
   }
 
@@ -169,16 +239,16 @@ class ArchivedFileHeader {
     return metadata_.pack_mode_;
   }
 
-  constexpr uint8_t filename_length() const {
+  constexpr size_t filename_length() const {
     return metadata_.filename_length_;
   }
 
-  constexpr uint8_t comment_length() const {
+  constexpr size_t comment_length() const {
     return metadata_.comment_length_;
   }
 
-  constexpr uint8_t attributes() const {
-    return metadata_.attributes_.raw;
+  constexpr ProtectionBits attributes() const {
+    return metadata_.attributes_;
   }
 
   constexpr uint8_t flags() const {
@@ -196,8 +266,6 @@ class ArchivedFileHeader {
   bool is_merged() const {
     return (flags() & 1) != 0;
   }
-
-  std::string attributes_str() const;
 
   static std::unique_ptr<ArchivedFileHeader> from_buffer(InputBuffer* buffer);
 };
