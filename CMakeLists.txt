@@ -3,6 +3,9 @@ cmake_minimum_required(VERSION 4.00)
 # Set the project name and version
 project(UnLzx VERSION 1.0 LANGUAGES C CXX)
 
+option(BUILD_TESTS "Whether to compile unittests" TRUE)
+option(BUILD_EXECUTABLE "Whether to compile the executable binary" TRUE)
+
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin/$<CONFIG>)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin/$<CONFIG>)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin/$<CONFIG>)
@@ -40,9 +43,6 @@ set(HEADERS
 
 add_library(unlzx_lib ${SOURCES} ${HEADERS})
 
-option(BUILD_TESTS "Whether to compile unittests" FALSE)
-option(BUILD_EXECUTABLE "Whether to compile the executable binary" TRUE)
-
 if (BUILD_EXECUTABLE) 
     # Add the main program source file
     add_executable(unlzx src/unlzx_main.cc)
@@ -53,14 +53,33 @@ if (BUILD_TESTS)
     # Enable testing
     enable_testing()
 
-    find_package(GTest REQUIRED)
+    include(FetchContent)
+    FetchContent_Declare(
+      googletest
+      GIT_REPOSITORY https://github.com/google/googletest.git
+      GIT_TAG        v1.14.0
+      GIT_SHALLOW    TRUE
+    )
+    # For Windows: Prevent overriding the parent project's compiler/linker settings
+    set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+    # Ensure gtest is compiled as a static library
+    set(BUILD_SHARED_LIBS OFF)
+    add_compile_definitions(GTEST_LINKED_AS_SHARED_LIBRARY=0)
+    add_compile_definitions(GTEST_CREATE_SHARED_LIBRARY=0)
+    FetchContent_MakeAvailable(googletest)
+    if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        target_compile_options(gtest PRIVATE "-Wno-character-conversion")
+        target_compile_options(gtest_main PRIVATE "-Wno-character-conversion")
+    endif()
+
     add_executable(unlzx_test
         src/circular_buffer_test.cc
         src/crc_test.cc
         src/mmap_buffer_test.cc
         src/unlzx_test.cc
     )
-    target_include_directories(unlzx_test PRIVATE ${GTEST_INCLUDE_DIRS})
-    target_link_libraries(unlzx_test PUBLIC GTest::GTest GTest::Main PRIVATE unlzx_lib)
-    add_test(NAME unlzx_test COMMAND unlzx_test)
+    target_link_libraries(unlzx_test PUBLIC gtest_main PRIVATE unlzx_lib)
+    
+    include(GoogleTest)
+    gtest_discover_tests(unlzx_test)
 endif()
