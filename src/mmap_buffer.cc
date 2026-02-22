@@ -4,10 +4,14 @@
 // Tracks current read position internally. Assumes sequential data access.
 #include "mmap_buffer.hh"
 
-#include <fcntl.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <unistd.h>
+#ifdef _WIN32
+#  include <windows.h>
+#else
+#  include <fcntl.h>
+#  include <sys/mman.h>
+#  include <sys/stat.h>
+#  include <unistd.h>
+#endif
 
 #include <cstdint>
 #include <cstdio>
@@ -16,6 +20,55 @@
 #include <format>
 #include <memory>
 #include <stdexcept>
+
+#ifdef _WIN32
+
+std::unique_ptr<MmapInputBuffer> MmapInputBuffer::for_file(const char* filepath) {
+  HANDLE file_handle =
+      CreateFileA(filepath, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
+                  FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (file_handle == INVALID_HANDLE_VALUE) return {};
+
+  LARGE_INTEGER file_size;
+  if (!GetFileSizeEx(file_handle, &file_size)) {
+    CloseHandle(file_handle);
+    return {};
+  }
+
+  size_t filesize = static_cast<size_t>(file_size.QuadPart);
+
+  HANDLE mapping_handle =
+      CreateFileMappingA(file_handle, nullptr, PAGE_READONLY, 0, 0, nullptr);
+  if (mapping_handle == nullptr) {
+    CloseHandle(file_handle);
+    throw std::runtime_error(
+        std::format("unable to create file mapping for \"{}\"", filepath));
+  }
+
+  const uint8_t* data =
+      static_cast<const uint8_t*>(MapViewOfFile(mapping_handle, FILE_MAP_READ, 0, 0, 0));
+  if (data == nullptr) {
+    CloseHandle(mapping_handle);
+    CloseHandle(file_handle);
+    throw std::runtime_error(std::format("unable to map view of file \"{}\"", filepath));
+  }
+
+  auto res              = std::make_unique<MmapInputBuffer>();
+  res->file_handle_     = file_handle;
+  res->mapping_handle_  = mapping_handle;
+  res->data_            = data;
+  res->filesize_        = filesize;
+
+  return res;
+}
+
+MmapInputBuffer::~MmapInputBuffer() {
+  UnmapViewOfFile(data_);
+  CloseHandle(mapping_handle_);
+  CloseHandle(file_handle_);
+}
+
+#else
 
 std::unique_ptr<MmapInputBuffer> MmapInputBuffer::for_file(const char* filepath) {
   int file_desc_ = open(filepath, O_RDONLY);
@@ -48,6 +101,8 @@ MmapInputBuffer::~MmapInputBuffer() {
   munmap(const_cast<uint8_t*>(data_), filesize_);
   close(fd_);
 }
+
+#endif
 
 InputBuffer MmapInputBuffer::get() const {
   return InputBuffer(data_, filesize_);

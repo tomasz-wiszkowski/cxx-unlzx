@@ -44,7 +44,12 @@ class MmapInputBuffer {
   InputBuffer get() const;
 
  private:
+#ifdef _WIN32
+  void*          file_handle_{};
+  void*          mapping_handle_{};
+#else
   int            fd_{};
+#endif
   size_t         filesize_{};
   const uint8_t* data_{};
 };

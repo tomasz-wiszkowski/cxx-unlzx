@@ -1,0 +1,154 @@
+{
+    "version": 4,
+    "cmakeMinimumRequired": {
+        "major": 4,
+        "minor": 0,
+        "patch": 0
+    },
+    "configurePresets": [
+        {
+            "name": "windows-base",
+            "hidden": true,
+            "generator": "Visual Studio 18 2026",
+            "binaryDir": "${sourceDir}/build/${presetName}",
+            "cacheVariables": {
+                "CMAKE_INSTALL_PREFIX": "${sourceDir}/install/${presetName}"
+            },
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Windows"
+            }
+        },
+        {
+            "name": "ninja-base",
+            "hidden": true,
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/${presetName}",
+            "cacheVariables": {
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+            }
+        },
+        {
+            "name": "ninja-x64-debug",
+            "displayName": "Ninja x64 Debug",
+            "description": "includes compile_commands.json",
+            "inherits": "ninja-base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "ninja-x64-release",
+            "displayName": "Ninja x64 Release",
+            "inherits": "ninja-base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        },
+        {
+            "name": "windows-x64-debug",
+            "displayName": "Windows x64 Debug",
+            "inherits": "windows-base",
+            "architecture": {
+                "value": "x64",
+                "strategy": "set"
+            },
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "windows-x64-release",
+            "displayName": "Windows x64 Release",
+            "inherits": "windows-base",
+            "architecture": {
+                "value": "x64",
+                "strategy": "set"
+            },
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        },
+        {
+            "name": "windows-x86-debug",
+            "displayName": "Windows x86 Debug",
+            "inherits": "windows-base",
+            "architecture": {
+                "value": "Win32",
+                "strategy": "set"
+            },
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "windows-x86-release",
+            "displayName": "Windows x86 Release",
+            "inherits": "windows-base",
+            "architecture": {
+                "value": "Win32",
+                "strategy": "set"
+            },
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "windows-x64-debug",
+            "displayName": "Windows x64 Debug",
+            "configurePreset": "windows-x64-debug",
+            "configuration": "Debug",
+            "targets": [
+                "all"
+            ]
+        },
+        {
+            "name": "windows-x64-release",
+            "displayName": "Windows x64 Release",
+            "configurePreset": "windows-x64-release",
+            "configuration": "Release",
+            "targets": [
+                "all"
+            ]
+        },
+        {
+            "name": "ninja-x64-debug",
+            "displayName": "Ninja x64 Debug",
+            "configurePreset": "ninja-x64-debug",
+            "configuration": "Debug",
+            "targets": [
+                "all"
+            ]
+        },
+        {
+            "name": "ninja-x64-release",
+            "displayName": "Ninja x64 Release",
+            "configurePreset": "ninja-x64-release",
+            "configuration": "Release",
+            "targets": [
+                "all"
+            ]
+        },
+        {
+            "name": "windows-x86-debug",
+            "displayName": "Windows x86 Debug",
+            "configurePreset": "windows-x86-debug",
+            "configuration": "Debug",
+            "targets": [
+                "all"
+            ]
+        },
+        {
+            "name": "windows-x86-release",
+            "displayName": "Windows x86 Release",
+            "configurePreset": "windows-x86-release",
+            "configuration": "Release",
+            "targets": [
+                "all"
+            ]
+        }
+    ]
+}

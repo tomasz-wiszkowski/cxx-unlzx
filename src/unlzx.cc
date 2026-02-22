@@ -38,7 +38,7 @@
 
 /* ---------------------------------------------------------------------- */
 
-static const unsigned char kVersion[] = "$VER: unlzx 1.1 (03.4.01)";
+static const unsigned char kVersion[] = "$VER: unlzx 1.2 (22.02.26)";
 
 /* ---------------------------------------------------------------------- */
 
@@ -250,15 +250,17 @@ auto process_archive(char* filename, Action action) -> void {
   auto mmap_buffer = MmapInputBuffer::for_file(filename);
   auto in_buffer   = mmap_buffer->get();
 
-  std::unique_ptr<FILE, decltype(&std::fclose)> in_file(std::fopen(filename, "rbe"), &std::fclose);
+  std::unique_ptr<FILE, decltype(&std::fclose)> in_file(fopen(filename, "rbe"), &std::fclose);
   if (in_file == nullptr) {
     throw std::runtime_error("could not open file");
   }
 
-  in_buffer.read_into(&info_header, sizeof(info_header));
-  fseek(in_file.get(), sizeof(info_header), SEEK_CUR);
+  uint8_t header[10]{};
 
-  if ((info_header[0] != 'L') || (info_header[1] != 'Z') || (info_header[2] != 'X')) {
+  in_buffer.read_into(header, sizeof(header));
+  fseek(in_file.get(), sizeof(header), SEEK_CUR);
+
+  if ((header[0] != 'L') || (header[1] != 'Z') || (header[2] != 'X')) {
     throw std::runtime_error("not an LZX file");
   }
 
