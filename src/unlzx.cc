@@ -95,7 +95,7 @@ static auto extract_normal(InputBuffer in_file) -> void {
     merged_files.pop_front();
     auto out_file = open_output(node.get());
 
-    crc::reset();
+    crc::Crc32 crc_calc;
 
     unpack_size = node->unpack_size();
     while (unpack_size > 0) {
@@ -115,7 +115,7 @@ static auto extract_normal(InputBuffer in_file) -> void {
         /* calculate amount of data we can use before we need to fill the buffer again */
         size_t count = std::min(span.size(), size_t(unpack_size));
 
-        crc::calc(span.data(), count);
+        crc_calc.calc(span.data(), count);
 
         if (out_file) {
           if (fwrite(span.data(), 1, count, out_file.get()) != count) {
@@ -127,7 +127,7 @@ static auto extract_normal(InputBuffer in_file) -> void {
       }
     }
 
-    std::println(" crc {}", (node->data_crc() == crc::sum()) ? "good" : "bad");
+    std::println(" crc {}", (node->data_crc() == crc_calc.sum()) ? "good" : "bad");
   }
 }
 
@@ -152,9 +152,9 @@ static auto extract_store(InputBuffer in_file) -> void {
       throw std::runtime_error(std::format("could not write file \"{}\"", node->filename()));
     }
 
-    crc::reset();
-    crc::calc(view.data(), view.size());
-    std::println(" crc {}", (node->data_crc() == crc::sum()) ? "good" : "bad");
+    crc::Crc32 crc_calc;
+    crc_calc.calc(view.data(), view.size());
+    std::println(" crc {}", (node->data_crc() == crc_calc.sum()) ? "good" : "bad");
   }
 }
 

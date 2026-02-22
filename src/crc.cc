@@ -54,19 +54,13 @@ constexpr std::array<uint32_t, 256> generate_lookup_table() {
 /// The CRC32 lookup table.
 constexpr std::array<uint32_t, 256> crc_table = generate_lookup_table();
 
-uint32_t sum_;
-
 }  // namespace
 
-void reset() {
-  sum_ = 0;
-}
-
-auto sum() -> uint32_t {
+auto Crc32::sum() const -> uint32_t {
   return sum_;
 }
 
-auto calc(const void* memory_raw, size_t length) -> uint32_t {
+auto Crc32::calc(const void* memory_raw, size_t length) -> uint32_t {
   const uint8_t* memory = static_cast<const uint8_t*>(memory_raw);
 
   if (length == 0) {

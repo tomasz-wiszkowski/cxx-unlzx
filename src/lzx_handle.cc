@@ -18,11 +18,11 @@ auto Entry::from_buffer(InputBuffer* buffer) -> std::unique_ptr<Entry> {
   result->filename_             = buffer->read_string_view(result->metadata_.filename_length_);
   result->comment_              = buffer->read_string_view(result->metadata_.comment_length_);
 
-  crc::reset();
-  crc::calc(&result->metadata_, sizeof(result->metadata_));
-  crc::calc(result->filename_.data(), result->filename_.size());
-  crc::calc(result->comment_.data(), result->comment_.size());
-  if (crc::sum() != header_crc) {
+  crc::Crc32 crc_calc;
+  crc_calc.calc(&result->metadata_, sizeof(result->metadata_));
+  crc_calc.calc(result->filename_.data(), result->filename_.size());
+  crc_calc.calc(result->comment_.data(), result->comment_.size());
+  if (crc_calc.sum() != header_crc) {
     throw std::runtime_error("File header checksum invalid.");
   }
 
