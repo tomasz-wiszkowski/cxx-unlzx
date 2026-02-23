@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string_view>
+
 /**
  * @brief Represents the status of an operation.
  */
@@ -31,3 +33,8 @@ enum class Status {
       return _status;                                                                              \
     }                                                                                              \
   } while (0)
+
+/**
+ * @brief Returns a string representation of the given status.
+ */
+std::string_view format_status(Status status);

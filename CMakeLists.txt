@@ -29,6 +29,7 @@ add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
 
 set(SOURCES
     src/crc.cc
+    src/error.cc
     src/huffman_decoder.cc
     src/huffman_table.cc
     src/lzx_block.cc
@@ -41,6 +42,7 @@ set(SOURCES
 
 set(HEADERS
     src/crc.hh
+    src/error.hh
     src/huffman_decoder.hh
     src/lzx_block.hh
     src/lzx_entry.hh
