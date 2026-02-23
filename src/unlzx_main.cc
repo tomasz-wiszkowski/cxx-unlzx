@@ -8,6 +8,9 @@
 #include "error.hh"
 #include "unlzx.hh"
 
+enum class Action : uint8_t { List, Extract };
+
+
 std::string_view format_status(Status status) {
   switch (status) {
   case Status::Ok:
@@ -53,8 +56,8 @@ auto main(int argc, char** argv) -> int {
   while (first_file < argc && argv[first_file][0] == '-') {
     for (int j = 1; argv[first_file][j] != '\0'; ++j) {
       switch (argv[first_file][j]) {
-      case 'v':  // (v)iew archive
-        action = Action::View;
+      case 'l':  // (l)ist archive
+        action = Action::List;
         break;
       case 'x':  // e(x)tract archive
         action = Action::Extract;
@@ -68,14 +71,14 @@ auto main(int argc, char** argv) -> int {
   }
 #else
   while (true) {
-    int option = getopt(argc, argv, "vx");
+    int option = getopt(argc, argv, "lx");
     if (option == -1) {
       break;
     }
 
     switch (option) {
-    case 'v':  // (v)iew archive
-      action = Action::View;
+    case 'l':  // (l)ist archive
+      action = Action::List;
       break;
     case 'x':  // e(x)tract archive
       action = Action::Extract;
@@ -90,8 +93,8 @@ auto main(int argc, char** argv) -> int {
 #endif
 
   if (first_file >= argc) {
-    std::println("Usage: unlzx [-v][-x][-c] [archive...]");
-    std::println("\t-v : list archive(s)");
+    std::println("Usage: unlzx [-l][-x][-c] [archive...]");
+    std::println("\t-l : list archive(s)");
     std::println("\t-x : extract (default)");
     return 2;
   }
@@ -105,7 +108,7 @@ auto main(int argc, char** argv) -> int {
       continue;
     }
 
-    if (action == Action::View) {
+    if (action == Action::List) {
       auto entries = unlzx.list_archive();
 
       size_t total_unpack = 0;

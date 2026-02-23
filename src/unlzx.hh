@@ -16,8 +16,6 @@
 #include "lzx_block.hh"
 #include "lzx_entry.hh"
 
-enum class Action : uint8_t { View, Extract };
-
 class Unlzx {
 public:
   Status open_archive(const char* filename);

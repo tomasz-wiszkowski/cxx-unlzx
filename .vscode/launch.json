@@ -16,7 +16,7 @@
             "request": "launch",
             "type":"cppvsdbg",
             "program": "${workspaceRoot}\\bin\\Debug\\unlzx.exe",
-            "args": ["-v", "test.lzx"],
+            "args": ["-l", "test.lzx"],
             "cwd": "C:\\Users\\Ender\\Downloads",
             "stopAtEntry": false,
             "environment": []
