@@ -49,9 +49,76 @@ std::string_view format_status(Status status) {
   }
 }
 
-int handle_list(Unlzx& unlzx) {
-  auto entries = unlzx.list_archive();
+class FilteredEntries {
+public:
+  class Iterator {
+  public:
+    Iterator(std::map<std::string, LzxEntry>::const_iterator it,
+             std::map<std::string, LzxEntry>::const_iterator end,
+             const FilteredEntries* parent)
+        : it_(it), end_(end), parent_(parent) {
+      advance_to_match();
+    }
 
+    Iterator& operator++() {
+      ++it_;
+      advance_to_match();
+      return *this;
+    }
+
+    bool operator!=(const Iterator& other) const { return it_ != other.it_; }
+    const std::pair<const std::string, LzxEntry>& operator*() const { return *it_; }
+
+  private:
+    void advance_to_match() {
+      while (it_ != end_ && !parent_->matches(it_->first)) {
+        ++it_;
+      }
+    }
+
+    std::map<std::string, LzxEntry>::const_iterator it_;
+    std::map<std::string, LzxEntry>::const_iterator end_;
+    const FilteredEntries* parent_;
+  };
+
+  FilteredEntries(const std::map<std::string, LzxEntry>& entries, std::span<char* const> names, bool use_regex)
+      : entries_(entries), names_(names), use_regex_(use_regex) {
+    if (use_regex) {
+      for (const char* p : names) {
+        res_.emplace_back(p, std::regex::ECMAScript | std::regex::icase);
+      }
+    }
+  }
+
+  bool matches(const std::string& name) const {
+    if (names_.empty()) {
+      return true;
+    }
+    for (size_t i = 0; i < names_.size(); ++i) {
+      if (use_regex_) {
+        if (std::regex_search(name, res_[i])) {
+          return true;
+        }
+      } else {
+        if (name == names_[i]) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  Iterator begin() const { return Iterator(entries_.begin(), entries_.end(), this); }
+  Iterator end() const { return Iterator(entries_.end(), entries_.end(), this); }
+
+private:
+  const std::map<std::string, LzxEntry>& entries_;
+  std::span<char* const> names_;
+  bool use_regex_;
+  std::vector<std::regex> res_;
+};
+
+int handle_list(const FilteredEntries& entries) {
   size_t total_unpack = 0;
   size_t total_files  = 0;
 
@@ -82,36 +149,16 @@ int handle_list(Unlzx& unlzx) {
   return 0;
 }
 
-int handle_view(Unlzx& unlzx, std::span<char* const> patterns) {
-  auto entries = unlzx.list_archive();
+int handle_view(const FilteredEntries& entries) {
   int matched_files = 0;
 
-  std::vector<std::regex> res;
-  for (const char* p : patterns) {
-    res.emplace_back(p, std::regex::ECMAScript | std::regex::icase);
-  }
-
   for (const auto& [name, entry] : entries) {
-    bool match = false;
-    for (size_t i = 0; i < patterns.size(); ++i) {
-      if (name == patterns[i]) {
-        match = true;
-        break;
-      }
-      if (std::regex_search(name, res[i])) {
-        match = true;
-        break;
-      }
+    std::println("-- contents of {}", name);
+    for (const auto& segment : entry.segments()) {
+      auto data = segment.data();
+      std::print("{}", std::string_view(reinterpret_cast<const char*>(data.data()), data.size()));
     }
-
-    if (match) {
-      std::println("-- contents of {}", name);
-      for (const auto& segment : entry.segments()) {
-        auto data = segment.data();
-        std::print("{}", std::string_view(reinterpret_cast<const char*>(data.data()), data.size()));
-      }
-      matched_files++;
-    }
+    matched_files++;
   }
 
   std::println("-- {} files matched", matched_files);
@@ -130,7 +177,24 @@ int handle_extract(Unlzx& unlzx, const char* archive_name) {
 auto main(int argc, char** argv) -> int {
   int    result = 0;
   Action action = Action::Extract;
-  int    first_file;
+  bool   use_regex = false;
+
+  int flag_idx = 1;
+  while (flag_idx < argc && std::string_view(argv[flag_idx]) == "--regex") {
+    use_regex = true;
+    ++flag_idx;
+  }
+
+  int shift = flag_idx - 1;
+  if (shift > 0) {
+    for (int i = 1; i < argc - shift; ++i) {
+      argv[i] = argv[i + shift];
+    }
+    argc -= shift;
+    argv[argc] = nullptr;
+  }
+
+  int first_file;
 
 #ifdef _WIN32
   first_file = 1;
@@ -180,7 +244,8 @@ auto main(int argc, char** argv) -> int {
 #endif
 
   if (argc - first_file < 1) {
-    std::println("Usage: unlzx [-l][-x][-v] archive [file...]");
+    std::println("Usage: unlzx [--regex] [-l][-x][-v] archive [file...]");
+    std::println("\t--regex : treat file(s) as regex patterns (with -l, -v)");
     std::println("\t-l : list archive");
     std::println("\t-x : extract (default)");
     std::println("\t-v : view file(s) in archive");
@@ -196,10 +261,14 @@ auto main(int argc, char** argv) -> int {
       return 1;
     }
 
-    if (action == Action::List) {
-      return handle_list(unlzx);
-    } else if (action == Action::View) {
-      return handle_view(unlzx, std::span<char* const>(argv + first_file + 1, static_cast<size_t>(argc - (first_file + 1))));
+    if (action == Action::List || action == Action::View) {
+      auto map_entries = unlzx.list_archive();
+      FilteredEntries entries(map_entries, std::span<char* const>(argv + first_file + 1, static_cast<size_t>(argc - (first_file + 1))), use_regex);
+      if (action == Action::List) {
+        return handle_list(entries);
+      } else {
+        return handle_view(entries);
+      }
     } else {
       return handle_extract(unlzx, argv[first_file]);
     }
