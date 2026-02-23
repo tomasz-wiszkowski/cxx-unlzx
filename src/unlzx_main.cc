@@ -8,7 +8,7 @@
 #include "error.hh"
 #include "unlzx.hh"
 
-enum class Action : uint8_t { List, Extract };
+enum class Action : uint8_t { List, Extract, View };
 
 
 std::string_view format_status(Status status) {
@@ -46,6 +46,62 @@ std::string_view format_status(Status status) {
   }
 }
 
+int handle_list(Unlzx& unlzx) {
+  auto entries = unlzx.list_archive();
+
+  size_t total_unpack = 0;
+  size_t total_files  = 0;
+
+  std::println("Unpacked Packed   Time     Date       Attrib   Name");
+  std::println("-------- -------- -------- ---------- -------- ----");
+
+  for (const auto& [name, entry] : entries) {
+    total_unpack += entry.unpack_size();
+    total_files  += entry.segments().size();
+
+    std::print("{:8} ", entry.unpack_size());
+    if (auto pack = entry.pack_size()) {
+      std::print("{:8} ", *pack);
+    } else {
+      std::print("     n/a ");
+    }
+    std::print("{0:t} {0:d} {1} ", entry.datestamp(), entry.attributes());
+
+    std::println("\"{}\"", name);
+    if (!entry.comment().empty()) {
+      std::println(": \"{}\"", entry.comment());
+    }
+  }
+
+  std::println("-------- -------- -------- ---------- -------- ----");
+  std::print("{:8}      n/a ", total_unpack);
+  std::println("{} file{}", total_files, ((total_files == 1) ? "" : "s"));
+  return 0;
+}
+
+int handle_view(Unlzx& unlzx, const std::string& target_file) {
+  auto entries = unlzx.list_archive();
+  auto it = entries.find(target_file);
+  if (it == entries.end()) {
+    std::println("File \"{}\" not found in archive", target_file);
+    return 1;
+  }
+  for (const auto& segment : it->second.segments()) {
+    auto data = segment.data();
+    std::print("{}", std::string_view(reinterpret_cast<const char*>(data.data()), data.size()));
+  }
+  return 0;
+}
+
+int handle_extract(Unlzx& unlzx, const char* archive_name) {
+  Status status = unlzx.extract_archive();
+  if (status != Status::Ok) {
+    std::println("Error extracting archive \"{}\": {}", archive_name, format_status(status));
+    return 1;
+  }
+  return 0;
+}
+
 auto main(int argc, char** argv) -> int {
   int    result = 0;
   Action action = Action::Extract;
@@ -62,6 +118,9 @@ auto main(int argc, char** argv) -> int {
       case 'x':  // e(x)tract archive
         action = Action::Extract;
         break;
+      case 'v':  // (v)iew file in archive
+        action = Action::View;
+        break;
       default:
         result = 1;
         break;
@@ -71,7 +130,7 @@ auto main(int argc, char** argv) -> int {
   }
 #else
   while (true) {
-    int option = getopt(argc, argv, "lx");
+    int option = getopt(argc, argv, "lxv");
     if (option == -1) {
       break;
     }
@@ -83,6 +142,9 @@ auto main(int argc, char** argv) -> int {
     case 'x':  // e(x)tract archive
       action = Action::Extract;
       break;
+    case 'v':  // (v)iew file in archive
+      action = Action::View;
+      break;
     case '?':  // unknown option
     default:
       result = 1;
@@ -92,10 +154,16 @@ auto main(int argc, char** argv) -> int {
   first_file = optind;
 #endif
 
-  if (argc - first_file != 1) {
-    std::println("Usage: unlzx [-l][-x] archive");
+  if (action == Action::View) {
+    if (argc - first_file != 2) {
+      std::println("Usage: unlzx -v archive filename");
+      return 2;
+    }
+  } else if (argc - first_file != 1) {
+    std::println("Usage: unlzx [-l][-x][-v] archive [filename]");
     std::println("\t-l : list archive");
     std::println("\t-x : extract (default)");
+    std::println("\t-v : view file in archive");
     return 2;
   }
 
@@ -109,40 +177,11 @@ auto main(int argc, char** argv) -> int {
     }
 
     if (action == Action::List) {
-      auto entries = unlzx.list_archive();
-
-      size_t total_unpack = 0;
-      size_t total_files  = 0;
-
-      std::println("Unpacked Packed   Time     Date       Attrib   Name");
-      std::println("-------- -------- -------- ---------- -------- ----");
-
-      for (const auto& [name, entry] : entries) {
-        total_unpack += entry.unpack_size();
-        total_files  += entry.segments().size();
-
-        std::print("{:8} ", entry.unpack_size());
-        if (auto pack = entry.pack_size()) {
-          std::print("{:8} ", *pack);
-        } else {
-          std::print("     n/a ");
-        }
-        std::print("{0:t} {0:d} {1} ", entry.datestamp(), entry.attributes());
-
-        std::println("\"{}\"", name);
-        if (!entry.comment().empty()) {
-          std::println(": \"{}\"", entry.comment());
-        }
-      }
-
-      std::println("-------- -------- -------- ---------- -------- ----");
-      std::print("{:8}      n/a ", total_unpack);
-      std::println("{} file{}", total_files, ((total_files == 1) ? "" : "s"));
+      return handle_list(unlzx);
+    } else if (action == Action::View) {
+      return handle_view(unlzx, argv[first_file + 1]);
     } else {
-      status = unlzx.extract_archive();
-      if (status != Status::Ok) {
-        std::println("Error extracting archive \"{}\": {}", argv[first_file], format_status(status));
-      }
+      return handle_extract(unlzx, argv[first_file]);
     }
   }
   return 0;
