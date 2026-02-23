@@ -1,5 +1,6 @@
 #pragma once
 
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <span>
@@ -66,6 +67,12 @@ public:
   const std::string& name() const;
 
   /**
+   * @brief Gets the path of the entry.
+   * @return The filesystem path.
+   */
+  const std::filesystem::path& path() const;
+
+  /**
    * @brief Gets the metadata for the entry.
    * @return The lzx::Entry metadata.
    */
@@ -109,6 +116,7 @@ public:
 
 private:
   std::string name_;
+  std::filesystem::path path_;
   lzx::Entry metadata_;
   std::vector<LzxFileSegment> segments_;
 };

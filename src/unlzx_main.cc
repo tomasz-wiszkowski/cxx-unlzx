@@ -2,12 +2,15 @@
 #include <unistd.h>
 #endif
 
+#include <filesystem>
+#include <fstream>
 #include <print>
 #include <regex>
 #include <set>
 #include <span>
 #include <vector>
 
+#include "crc.hh"
 #include "error.hh"
 #include "unlzx.hh"
 
@@ -165,11 +168,39 @@ int handle_view(const FilteredEntries& entries) {
   return 0;
 }
 
-int handle_extract(Unlzx& unlzx, const char* archive_name) {
-  Status status = unlzx.extract_archive();
-  if (status != Status::Ok) {
-    std::println("Error extracting archive \"{}\": {}", archive_name, format_status(status));
-    return 1;
+int handle_extract(const FilteredEntries& entries) {
+  for (const auto& [name, entry] : entries) {
+    const auto& path = entry.path();
+
+    if (entry.unpack_size() == 0 && name.ends_with("/")) {
+      std::filesystem::create_directories(path);
+      std::print("Creating directory \"{}\"", name);
+      std::println(" crc good");
+      continue;
+    }
+
+    if (path.has_parent_path()) {
+      std::filesystem::create_directories(path.parent_path());
+    }
+
+    std::ofstream out_file(path, std::ios::binary | std::ios::out | std::ios::trunc);
+    if (!out_file) {
+      std::println("Error creating file \"{}\"", name);
+      return 1;
+    }
+
+    std::print("Writing \"{}\"...", name);
+    crc::Crc32 crc_calc;
+    for (const auto& segment : entry.segments()) {
+      auto data = segment.data();
+      crc_calc.calc(data.data(), data.size());
+      if (!out_file.write(reinterpret_cast<const char*>(data.data()), data.size())) {
+        std::println(" error writing file");
+        return 1;
+      }
+    }
+
+    std::println(" crc {}", (entry.metadata().data_crc() == crc_calc.sum()) ? "good" : "bad");
   }
   return 0;
 }
@@ -261,16 +292,15 @@ auto main(int argc, char** argv) -> int {
       return 1;
     }
 
-    if (action == Action::List || action == Action::View) {
-      auto map_entries = unlzx.list_archive();
-      FilteredEntries entries(map_entries, std::span<char* const>(argv + first_file + 1, static_cast<size_t>(argc - (first_file + 1))), use_regex);
-      if (action == Action::List) {
-        return handle_list(entries);
-      } else {
-        return handle_view(entries);
-      }
+    auto map_entries = unlzx.list_archive();
+    FilteredEntries entries(map_entries, std::span<char* const>(argv + first_file + 1, static_cast<size_t>(argc - (first_file + 1))), use_regex);
+
+    if (action == Action::List) {
+      return handle_list(entries);
+    } else if (action == Action::View) {
+      return handle_view(entries);
     } else {
-      return handle_extract(unlzx, argv[first_file]);
+      return handle_extract(entries);
     }
   }
   return 0;

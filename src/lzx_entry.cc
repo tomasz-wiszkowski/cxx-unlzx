@@ -22,11 +22,41 @@ size_t LzxFileSegment::decompressed_length() const {
   return decompressed_length_;
 }
 
+static std::filesystem::path from_latin1(const std::string& latin1) {
+#ifdef _WIN32
+  std::wstring wide;
+  wide.reserve(latin1.length());
+  for (unsigned char c : latin1) {
+    wide.push_back(static_cast<wchar_t>(c));
+  }
+  return std::filesystem::path(wide);
+#else
+  std::string utf8;
+  utf8.reserve(latin1.length() * 2);
+  for (unsigned char c : latin1) {
+    if (c < 0x80) {
+      utf8.push_back(c);
+    } else {
+      utf8.push_back(static_cast<char>(0xc0 | (c >> 6)));
+      utf8.push_back(static_cast<char>(0x80 | (c & 0x3f)));
+    }
+  }
+  return std::filesystem::path(utf8);
+#endif
+}
+
 LzxEntry::LzxEntry(std::string name, lzx::Entry metadata, std::vector<LzxFileSegment> segments)
-    : name_(std::move(name)), metadata_(std::move(metadata)), segments_(std::move(segments)) {}
+    : name_(std::move(name)),
+      path_(from_latin1(name_)),
+      metadata_(std::move(metadata)),
+      segments_(std::move(segments)) {}
 
 const std::string& LzxEntry::name() const {
   return name_;
+}
+
+const std::filesystem::path& LzxEntry::path() const {
+  return path_;
 }
 
 const lzx::Entry& LzxEntry::metadata() const {
