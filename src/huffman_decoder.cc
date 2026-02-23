@@ -138,7 +138,7 @@ Status HuffmanDecoder::read_literal_table(InputBuffer* source) {
           }
 
           symbol = kBaseValues[literals_.bit_length_[pos] + 17 - symbol];
-          pos += fill_literals_bit_lengths(count, symbol);
+          pos += fill_literals_bit_lengths(count, static_cast<uint8_t>(symbol));
           break;
         }
 

@@ -23,7 +23,11 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 if(MSVC)
-    add_compile_options(/EHs- /EHc- /GR- /W4)
+    string(REGEX REPLACE "/EH[a-z]+" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+    string(REGEX REPLACE "/EH[a-z]+" "" CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
+    # 4201: unnamed bitfields
+    # 4530: exception semantics used with disabled exceptions.
+    add_compile_options(/EHs- /EHc- /W4 /wd4201 /wd4530)
 else()
     add_compile_options(-fno-exceptions -fno-rtti -Wall -Wextra)
 endif()

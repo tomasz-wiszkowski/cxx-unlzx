@@ -60,7 +60,7 @@ std::map<std::string, LzxEntry> Unlzx::list_archive() {
     size_t      pack_size   = archive_header->pack_size();
     std::string filename    = archive_header->filename();
     bool        is_merged   = archive_header->flags().is_merged();
-    uint32_t    unpack_size = archive_header->unpack_size();
+    uint32_t    unpack_size = static_cast<uint32_t>(archive_header->unpack_size());
 
     auto [it, inserted] = builders.try_emplace(filename, *archive_header);
 

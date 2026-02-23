@@ -63,7 +63,7 @@ Status HuffmanTable::reset_table() {
       next_symbol = 1 << current_bit_length;
       while (fill > 0) {
         fill--;
-        table_[leaf] = symbol;
+        table_[leaf] = static_cast<uint16_t>(symbol);
         leaf += next_symbol;
       }
     }
@@ -92,12 +92,12 @@ Status HuffmanTable::reset_table() {
             if (table_[leaf] == 0) {
               table_[next_symbol << 1]       = 0;
               table_[(next_symbol << 1) + 1] = 0;
-              table_[leaf]                   = next_symbol++;
+              table_[leaf]                   = static_cast<uint16_t>(next_symbol++);
             }
             leaf = (table_[leaf] << 1) | ((position >> (15 - fill)) & 1);
           }
 
-          table_[leaf] = symbol;
+          table_[leaf] = static_cast<uint16_t>(symbol);
           position += bit_mask;
           if (position > table_mask) {
             return Status::HuffmanTableError;

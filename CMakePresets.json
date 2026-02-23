@@ -102,7 +102,9 @@
             "configurePreset": "windows-x64-debug",
             "configuration": "Debug",
             "targets": [
-                "all"
+                "unlzx_lib",
+                "unlzx",
+                "unlzx_test"
             ]
         },
         {
@@ -111,7 +113,8 @@
             "configurePreset": "windows-x64-release",
             "configuration": "Release",
             "targets": [
-                "all"
+                "unlzx_lib",
+                "unlzx"
             ]
         },
         {
@@ -138,7 +141,9 @@
             "configurePreset": "windows-x86-debug",
             "configuration": "Debug",
             "targets": [
-                "all"
+                "unlzx_lib",
+                "unlzx",
+                "unlzx_test"
             ]
         },
         {
@@ -147,7 +152,8 @@
             "configurePreset": "windows-x86-release",
             "configuration": "Release",
             "targets": [
-                "all"
+                "unlzx_lib",
+                "unlzx"
             ]
         }
     ]
