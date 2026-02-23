@@ -92,20 +92,20 @@ auto main(int argc, char** argv) -> int {
   first_file = optind;
 #endif
 
-  if (first_file >= argc) {
-    std::println("Usage: unlzx [-l][-x][-c] [archive...]");
-    std::println("\t-l : list archive(s)");
+  if (argc - first_file != 1) {
+    std::println("Usage: unlzx [-l][-x] archive");
+    std::println("\t-l : list archive");
     std::println("\t-x : extract (default)");
     return 2;
   }
 
-  for (; first_file < argc; ++first_file) {
+  {
     std::println("Archive \"{}\"...", argv[first_file]);
     Unlzx  unlzx;
     Status status = unlzx.open_archive(argv[first_file]);
     if (status != Status::Ok) {
       std::println("Error processing archive \"{}\": {}", argv[first_file], format_status(status));
-      continue;
+      return 1;
     }
 
     if (action == Action::List) {
