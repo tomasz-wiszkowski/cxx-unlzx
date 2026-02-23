@@ -12,6 +12,12 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin/$<CONFIG>)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(IS_DEBUG TRUE)
+else()
+    set(IS_DEBUG FALSE)
+endif()
+
 # Specify the C++ standard
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
@@ -49,7 +55,7 @@ if (BUILD_EXECUTABLE)
     target_link_libraries(unlzx PRIVATE unlzx_lib)
 endif()
 
-if (BUILD_TESTS) 
+if (BUILD_TESTS AND IS_DEBUG) 
     # Enable testing
     enable_testing()
 

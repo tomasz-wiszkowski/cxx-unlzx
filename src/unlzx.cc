@@ -207,58 +207,67 @@ Status Unlzx::extract_archive() {
 
 /* ---------------------------------------------------------------------- */
 
-Status Unlzx::list_archive() {
-  size_t total_pack   = 0;
-  size_t total_unpack = 0;
-  size_t total_files  = 0;
-  size_t merge_size   = 0;
-
-  std::println("Unpacked Packed   Time     Date       Attrib   Name");
-  std::println("-------- -------- -------- ---------- -------- ----");
+std::map<std::string, LzxEntry> Unlzx::list_archive() {
+  std::map<std::string, LzxEntry> entries;
 
   std::unique_ptr<lzx::Entry> archive_header;
+  size_t current_decompressed_offset = 0;
+  std::vector<std::string> current_merge_group;
+
   while (!in_buffer_->is_eof()) {
-    TRY(lzx::Entry::from_buffer(&*in_buffer_, archive_header));
+    if (lzx::Entry::from_buffer(&*in_buffer_, archive_header) != Status::Ok) {
+      break;
+    }
 
-    uint32_t    unpack_size = archive_header->unpack_size();
     size_t      pack_size   = archive_header->pack_size();
-    const auto& stamp       = archive_header->datestamp();
-    const auto& attrs       = archive_header->attributes();
+    std::string filename    = archive_header->filename();
+    bool        is_merged   = archive_header->flags().is_merged();
+    uint32_t    unpack_size = archive_header->unpack_size();
 
-    total_pack += pack_size;
-    total_unpack += unpack_size;
-    total_files++;
-    merge_size += unpack_size;
+    size_t offset = 0;
+    in_buffer_->skip(0, offset);
 
-    std::print("{:8} ", unpack_size);
-    if (archive_header->flags().is_merged()) {
-      std::print("     n/a ");
+    auto& entry = entries[filename];
+    if (entry.name.empty()) {
+      entry.name     = filename;
+      entry.metadata = *archive_header;
+    }
+
+    if (is_merged) {
+      LzxFileSegment segment;
+      segment.decompressed_offset = current_decompressed_offset;
+      segment.decompressed_length = unpack_size;
+      entry.segments.push_back(segment);
+
+      current_decompressed_offset += unpack_size;
+      current_merge_group.push_back(filename);
+
+      if (pack_size > 0) {
+        auto shared_block = std::make_shared<LzxBlock>(LzxBlock{std::move(*archive_header), offset, pack_size});
+        for (const auto& merged_filename : current_merge_group) {
+          entries[merged_filename].segments.back().block = shared_block;
+        }
+        current_merge_group.clear();
+        current_decompressed_offset = 0;
+      }
     } else {
-      std::print("{:8} ", pack_size);
+      auto shared_block = std::make_shared<LzxBlock>(LzxBlock{std::move(*archive_header), offset, pack_size});
+      LzxFileSegment segment;
+      segment.decompressed_offset = 0;
+      segment.decompressed_length = unpack_size;
+      segment.block = shared_block;
+      entry.segments.push_back(segment);
     }
 
-    std::print("{0:t} {0:d} {1} ", stamp, attrs);
-
-    std::println("\"{}\"", archive_header->filename());
-    if (!archive_header->comment().empty()) {
-      std::println(": \"{}\"", archive_header->comment());
+    if (in_buffer_->skip(pack_size) != Status::Ok) {
+      break;
     }
-
-    if (archive_header->flags().is_merged() && (pack_size > 0)) {
-      std::println("{:8} {:8} Merged", merge_size, pack_size);
-      merge_size = 0;
-    }
-
-    TRY(in_buffer_->skip(pack_size));
   }
 
-  std::println("-------- -------- -------- ---------- -------- ----");
-  std::print("{:8} {:8} ", total_unpack, total_pack);
-  std::println("{} file{}", total_files, ((total_files == 1) ? "" : "s"));
-  return Status::Ok;
+  return entries;
 }
 
-Status Unlzx::process_archive(const char* filename, Action action) {
+Status Unlzx::open_archive(const char* filename) {
   TRY(MmapInputBuffer::for_file(filename, mmap_buffer_));
 
   in_buffer_ = mmap_buffer_->get();
@@ -271,12 +280,5 @@ Status Unlzx::process_archive(const char* filename, Action action) {
     return Status::NotLzxFile;
   }
 
-  switch (action) {
-  case Action::Extract:
-    return extract_archive();
-
-  case Action::View:
-    return list_archive();
-  }
   return Status::Ok;
 }

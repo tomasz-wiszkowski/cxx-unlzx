@@ -3,6 +3,7 @@
 #endif
 
 #include <print>
+#include <set>
 
 #include "error.hh"
 #include "unlzx.hh"
@@ -98,9 +99,67 @@ auto main(int argc, char** argv) -> int {
   for (; first_file < argc; ++first_file) {
     std::println("Archive \"{}\"...", argv[first_file]);
     Unlzx  unlzx;
-    Status status = unlzx.process_archive(argv[first_file], action);
+    Status status = unlzx.open_archive(argv[first_file]);
     if (status != Status::Ok) {
       std::println("Error processing archive \"{}\": {}", argv[first_file], format_status(status));
+      continue;
+    }
+
+    if (action == Action::View) {
+      auto entries = unlzx.list_archive();
+
+      size_t total_pack   = 0;
+      size_t total_unpack = 0;
+      size_t total_files  = 0;
+
+      std::println("Unpacked Packed   Time     Date       Attrib   Name");
+      std::println("-------- -------- -------- ---------- -------- ----");
+
+      std::set<std::shared_ptr<LzxBlock>> unique_blocks;
+
+      for (const auto& [name, entry] : entries) {
+        for (const auto& segment : entry.segments) {
+          if (segment.block) {
+            unique_blocks.insert(segment.block);
+          }
+        }
+
+        total_unpack += entry.unpack_size();
+        total_files  += entry.segments.size();
+
+        std::print("{:8} ", entry.unpack_size());
+        if (auto pack = entry.pack_size()) {
+          std::print("{:8} ", *pack);
+        } else {
+          std::print("     n/a ");
+        }
+        std::print("{0:t} {0:d} {1} ", entry.datestamp(), entry.attributes());
+
+        std::println("\"{}\"", name);
+#if !defined(NDEBUG)
+        for (const auto& seg : entry.segments) {
+          if (seg.block && seg.block->node.flags().is_merged()) {
+            std::println("         [Merged in block at offset {}, decompressed offset {}]", seg.block->offset, seg.decompressed_offset);
+          }
+        }
+#endif
+        if (!entry.comment().empty()) {
+          std::println(": \"{}\"", entry.comment());
+        }
+      }
+
+      for (const auto& block : unique_blocks) {
+        total_pack += block->length;
+      }
+
+      std::println("-------- -------- -------- ---------- -------- ----");
+      std::print("{:8} {:8} ", total_unpack, total_pack);
+      std::println("{} file{}", total_files, ((total_files == 1) ? "" : "s"));
+    } else {
+      status = unlzx.extract_archive();
+      if (status != Status::Ok) {
+        std::println("Error extracting archive \"{}\": {}", argv[first_file], format_status(status));
+      }
     }
   }
   return 0;
