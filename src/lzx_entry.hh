@@ -29,13 +29,13 @@ public:
    * @brief Gets the segment of the block data.
    * @return The span to the segment data.
    */
-  std::span<const uint8_t> get_data() const;
+  std::span<const uint8_t> data() const;
 
   /**
    * @brief Gets the status of the last decompression operation from the block.
    * @return The Status code.
    */
-  Status get_status() const;
+  Status status() const;
 
   /**
    * @brief Gets the decompressed length.

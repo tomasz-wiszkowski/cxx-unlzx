@@ -24,13 +24,13 @@ public:
    * @brief Decompresses the block data if not already done and returns a span to it.
    * @return An optional span containing the decompressed data.
    */
-  std::optional<std::span<const uint8_t>> get_data();
+  std::optional<std::span<const uint8_t>> data();
 
   /**
    * @brief Gets the status of the last decompression operation.
    * @return The Status code.
    */
-  Status get_status() const { return status_; }
+  Status status() const { return status_; }
 
   /**
    * @brief Gets the packed (compressed) size of the block.
