@@ -23,16 +23,16 @@
 
 #ifdef _WIN32
 
-std::unique_ptr<MmapInputBuffer> MmapInputBuffer::for_file(const char* filepath) {
+Status MmapInputBuffer::for_file(const char* filepath, std::unique_ptr<MmapInputBuffer>& out) {
   HANDLE file_handle =
       CreateFileA(filepath, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
                   FILE_ATTRIBUTE_NORMAL, nullptr);
-  if (file_handle == INVALID_HANDLE_VALUE) return {};
+  if (file_handle == INVALID_HANDLE_VALUE) return Status::FileOpenError;
 
   LARGE_INTEGER file_size;
   if (!GetFileSizeEx(file_handle, &file_size)) {
     CloseHandle(file_handle);
-    return {};
+    return Status::FileOpenError;
   }
 
   size_t filesize = static_cast<size_t>(file_size.QuadPart);
@@ -41,8 +41,7 @@ std::unique_ptr<MmapInputBuffer> MmapInputBuffer::for_file(const char* filepath)
       CreateFileMappingA(file_handle, nullptr, PAGE_READONLY, 0, 0, nullptr);
   if (mapping_handle == nullptr) {
     CloseHandle(file_handle);
-    throw std::runtime_error(
-        std::format("unable to create file mapping for \"{}\"", filepath));
+    return Status::FileMapError;
   }
 
   const uint8_t* data =
@@ -50,16 +49,16 @@ std::unique_ptr<MmapInputBuffer> MmapInputBuffer::for_file(const char* filepath)
   if (data == nullptr) {
     CloseHandle(mapping_handle);
     CloseHandle(file_handle);
-    throw std::runtime_error(std::format("unable to map view of file \"{}\"", filepath));
+    return Status::FileMapError;
   }
 
-  auto res              = std::make_unique<MmapInputBuffer>();
-  res->file_handle_     = file_handle;
-  res->mapping_handle_  = mapping_handle;
-  res->data_            = data;
-  res->filesize_        = filesize;
+  out                  = std::make_unique<MmapInputBuffer>();
+  out->file_handle_    = file_handle;
+  out->mapping_handle_ = mapping_handle;
+  out->data_           = data;
+  out->filesize_       = filesize;
 
-  return res;
+  return Status::Ok;
 }
 
 MmapInputBuffer::~MmapInputBuffer() {
@@ -70,14 +69,14 @@ MmapInputBuffer::~MmapInputBuffer() {
 
 #else
 
-std::unique_ptr<MmapInputBuffer> MmapInputBuffer::for_file(const char* filepath) {
+Status MmapInputBuffer::for_file(const char* filepath, std::unique_ptr<MmapInputBuffer>& out) {
   int file_desc_ = open(filepath, O_RDONLY);
-  if (file_desc_ == -1) return {};
+  if (file_desc_ == -1) return Status::FileOpenError;
 
   struct stat stat_buffer;
   if (fstat(file_desc_, &stat_buffer) == -1) {
     close(file_desc_);
-    return {};
+    return Status::FileOpenError;
   }
 
   size_t filesize = stat_buffer.st_size;
@@ -86,15 +85,15 @@ std::unique_ptr<MmapInputBuffer> MmapInputBuffer::for_file(const char* filepath)
       static_cast<uint8_t*>(mmap(nullptr, filesize, PROT_READ, MAP_PRIVATE, file_desc_, 0));
   if (data == MAP_FAILED) {
     close(file_desc_);
-    throw std::runtime_error(std::format("unable to mmap input file \"{}\"", filepath));
+    return Status::FileMapError;
   }
 
-  auto res       = std::make_unique<MmapInputBuffer>();
-  res->fd_       = file_desc_;
-  res->data_     = data;
-  res->filesize_ = filesize;
+  out           = std::make_unique<MmapInputBuffer>();
+  out->fd_      = file_desc_;
+  out->data_    = data;
+  out->filesize_ = filesize;
 
-  return res;
+  return Status::Ok;
 }
 
 MmapInputBuffer::~MmapInputBuffer() {
@@ -108,78 +107,93 @@ InputBuffer MmapInputBuffer::get() const {
   return InputBuffer(data_, filesize_);
 }
 
-uint16_t InputBuffer::read_word() {
+Status InputBuffer::read_word(uint16_t& out) {
   // less than 2 bytes available?
   if (filesize_ < (current_position_ + 2)) {
-    throw std::runtime_error("requested data out of range");
+    return Status::OutOfRange;
   }
 
-  uint16_t result = (data_[current_position_] << 8) | (data_[current_position_ + 1]);
+  out = (data_[current_position_] << 8) | (data_[current_position_ + 1]);
   current_position_ += 2;
 
-  return result;
+  return Status::Ok;
 }
 
-uint16_t InputBuffer::peek_bits(size_t data_bits_requested) {
+Status InputBuffer::peek_bits(size_t data_bits_requested, uint16_t& out) {
   if (data_bits_requested > 16) {
-    throw std::runtime_error(
-        std::format("number of bits to read: {} is greater than max: 16", data_bits_requested));
+    return Status::OutOfRange;
   }
 
   if (data_bits_available_ < data_bits_requested) {
-    data_bits_ |= read_word() << data_bits_available_;
+    uint16_t word;
+    TRY(read_word(word));
+    data_bits_ |= word << data_bits_available_;
     data_bits_available_ += 16;
   }
 
   // Read N bits.
   // Turn data_bits_requested to a mask, e.g. "4" becomes "0b1111".
-  return (data_bits_ & ((1 << data_bits_requested) - 1));
+  out = (data_bits_ & ((1 << data_bits_requested) - 1));
+  return Status::Ok;
 }
 
-uint16_t InputBuffer::read_bits(size_t data_bits_requested) {
-  uint16_t result = peek_bits(data_bits_requested);
+Status InputBuffer::read_bits(size_t data_bits_requested, uint16_t& out) {
+  TRY(peek_bits(data_bits_requested, out));
   // Consume bits.
   data_bits_ >>= data_bits_requested;
   data_bits_available_ -= data_bits_requested;
 
-  return result;
+  return Status::Ok;
 }
 
-void InputBuffer::read_into(void* target, size_t length) {
-  size_t data_position = skip(length);
+Status InputBuffer::read_into(void* target, size_t length) {
+  size_t data_position;
+  TRY(skip(length, data_position));
   std::memcpy(target, &data_[data_position], length);
+  return Status::Ok;
 }
 
 bool InputBuffer::is_eof() const {
   return current_position_ == filesize_;
 }
 
-std::string_view InputBuffer::read_string_view(size_t length) {
-  size_t data_position = skip(length);
-  return std::string_view(reinterpret_cast<const char*>(&data_[data_position]), length);
+Status InputBuffer::read_string_view(size_t length, std::string_view& out) {
+  size_t data_position;
+  TRY(skip(length, data_position));
+  out = std::string_view(reinterpret_cast<const char*>(&data_[data_position]), length);
+  return Status::Ok;
 }
 
-std::span<const uint8_t> InputBuffer::read_span(size_t length) {
-  size_t data_position = skip(length);
-  return std::span<const uint8_t>(&data_[data_position], length);
+Status InputBuffer::read_span(size_t length, std::span<const uint8_t>& out) {
+  size_t data_position;
+  TRY(skip(length, data_position));
+  out = std::span<const uint8_t>(&data_[data_position], length);
+  return Status::Ok;
 }
 
-InputBuffer InputBuffer::read_buffer(size_t length) {
-  size_t data_position = skip(length);
-  return InputBuffer(&data_[data_position], length);
+Status InputBuffer::read_buffer(size_t length, InputBuffer& out) {
+  size_t data_position;
+  TRY(skip(length, data_position));
+  out = InputBuffer(&data_[data_position], length);
+  return Status::Ok;
 }
 
-size_t InputBuffer::skip(size_t length) {
+Status InputBuffer::skip(size_t length, size_t& out_position) {
   if (data_bits_available_ > 0) {
-    throw std::runtime_error("cannot read misaligned data");
+    return Status::MisalignedData;
   }
 
   if (filesize_ < current_position_ + length) {
-    throw std::runtime_error("unexpected end of input file");
+    return Status::UnexpectedEof;
   }
 
-  size_t last_position = current_position_;
+  out_position      = current_position_;
   current_position_ += length;
 
-  return last_position;
+  return Status::Ok;
+}
+
+Status InputBuffer::skip(size_t length) {
+  size_t unused;
+  return skip(length, unused);
 }

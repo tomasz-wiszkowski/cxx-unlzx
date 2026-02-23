@@ -22,7 +22,7 @@ HuffmanTable::HuffmanTable(size_t table_bits, size_t num_symbols, size_t num_dec
  * @return bool Returns true on success, false if an error occurred (e.g., table creation was
  * aborted).
  */
-void HuffmanTable::reset_table() {
+Status HuffmanTable::reset_table() {
   uint8_t  current_bit_length = 0;
   uint32_t symbol;
   uint32_t leaf;
@@ -56,7 +56,7 @@ void HuffmanTable::reset_table() {
 
       position += bit_mask;
       if (position > table_mask) {
-        throw std::runtime_error("failure in building huffman literal table");
+        return Status::HuffmanTableError;
       }
 
       fill        = bit_mask;
@@ -100,7 +100,7 @@ void HuffmanTable::reset_table() {
           table_[leaf] = symbol;
           position += bit_mask;
           if (position > table_mask) {
-            throw std::runtime_error("failure in building huffman literal table");
+            return Status::HuffmanTableError;
           }
         }
       }
@@ -110,8 +110,10 @@ void HuffmanTable::reset_table() {
   }
 
   if (position != table_mask) {
-    throw std::runtime_error("failure in building huffman literal table");
+    return Status::HuffmanTableError;
   }
+
+  return Status::Ok;
 }
 
 }  // namespace huffman

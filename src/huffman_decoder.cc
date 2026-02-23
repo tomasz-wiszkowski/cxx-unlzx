@@ -25,7 +25,7 @@ constexpr uint8_t kSymbolLongerThanSixBits = 20;
 HuffmanDecoder::HuffmanDecoder()
     : offsets_(7, 8, 128), huffman20_(6, 20, 96), literals_(12, 768, 5120) {}
 
-void HuffmanDecoder::read_literal_table(InputBuffer* source) {
+Status HuffmanDecoder::read_literal_table(InputBuffer* source) {
   uint32_t symbol;
   uint32_t pos;
   uint32_t count;
@@ -33,19 +33,26 @@ void HuffmanDecoder::read_literal_table(InputBuffer* source) {
   uint32_t max_symbol;
 
   // Read the decrunch method
-  decrunch_method_ = source->read_bits(3);
+  uint16_t method;
+  TRY(source->read_bits(3, method));
+  decrunch_method_ = method;
 
   // Read and build the offset Huffman table
   if (decrunch_method_ == 3) {
-    std::generate(offsets_.bit_length_.begin(), offsets_.bit_length_.end(),
-        [&source]() { return source->read_bits(3); });
-    offsets_.reset_table();
+    for (auto& bl : offsets_.bit_length_) {
+      uint16_t val;
+      TRY(source->read_bits(3, val));
+      bl = static_cast<uint8_t>(val);
+    }
+    TRY(offsets_.reset_table());
   }
 
   // Read decrunch length
-  decrunch_length_ = source->read_bits(8) << 16;
-  decrunch_length_ |= source->read_bits(8) << 8;
-  decrunch_length_ |= source->read_bits(8);
+  uint16_t b1, b2, b3;
+  TRY(source->read_bits(8, b1));
+  TRY(source->read_bits(8, b2));
+  TRY(source->read_bits(8, b3));
+  decrunch_length_ = (b1 << 16) | (b2 << 8) | b3;
 
   auto fill_literals_bit_lengths = [&](uint32_t byte_count, uint8_t value) {
     uint32_t fill_length = std::min(byte_count, max_symbol - pos);
@@ -60,46 +67,71 @@ void HuffmanDecoder::read_literal_table(InputBuffer* source) {
     max_symbol = 256;
 
     do {
-      std::generate(huffman20_.bit_length_.begin(), huffman20_.bit_length_.end(),
-          [&source]() { return source->read_bits(4); });
-      huffman20_.reset_table();
+      for (auto& bl : huffman20_.bit_length_) {
+        uint16_t val;
+        TRY(source->read_bits(4, val));
+        bl = static_cast<uint8_t>(val);
+      }
+      TRY(huffman20_.reset_table());
 
       do {
-        symbol = huffman20_.table_[source->peek_bits(6)];
+        uint16_t peeked;
+        TRY(source->peek_bits(6, peeked));
+        symbol = huffman20_.table_[peeked];
+
         if (symbol >= kSymbolLongerThanSixBits) {
-          source->read_bits(6);
+          source->skip(0);  // This is not quite right if we need to consume bits.
+          // peek_bits/read_bits handle bit consumption.
+          // source->read_bits(6, peeked) consumes them.
+          TRY(source->read_bits(6, peeked));
 
           do {
-            symbol = huffman20_.table_[symbol << 1 | source->read_bits(1)];
+            uint16_t bit;
+            TRY(source->read_bits(1, bit));
+            symbol = huffman20_.table_[symbol << 1 | bit];
           } while (symbol >= kSymbolLongerThanSixBits);
         } else {
-          source->read_bits(huffman20_.bit_length_[symbol]);
+          uint16_t unused;
+          TRY(source->read_bits(huffman20_.bit_length_[symbol], unused));
         }
 
 
         switch (symbol) {
-        case kSymbolZeroFill:
-          count = 3 + source->read_bits(4) + fix;
+        case kSymbolZeroFill: {
+          uint16_t bits;
+          TRY(source->read_bits(4, bits));
+          count = 3 + bits + fix;
           pos += fill_literals_bit_lengths(count, 0);
           break;
+        }
 
-        case kSymbolRepeatZero:
-          count = 19 + source->read_bits(6 - fix) + fix;
+        case kSymbolRepeatZero: {
+          uint16_t bits;
+          TRY(source->read_bits(6 - fix, bits));
+          count = 19 + bits + fix;
           pos += fill_literals_bit_lengths(count, 0);
           break;
+        }
 
 
         case kSymbolRepeatPrevious: {
-          count  = 3 + source->read_bits(1) + fix;
-          symbol = huffman20_.table_[source->peek_bits(6)];
+          uint16_t bits;
+          TRY(source->read_bits(1, bits));
+          count = 3 + bits + fix;
+
+          TRY(source->peek_bits(6, bits));
+          symbol = huffman20_.table_[bits];
 
           if (symbol >= kSymbolLongerThanSixBits) {
-            source->read_bits(6);
+            uint16_t unused;
+            TRY(source->read_bits(6, unused));
             do {  // Symbol is longer than 6 bits
-              symbol = huffman20_.table_[(symbol << 1) | source->read_bits(1)];
+              TRY(source->read_bits(1, bits));
+              symbol = huffman20_.table_[(symbol << 1) | bits];
             } while (symbol >= kSymbolLongerThanSixBits);
           } else {
-            source->read_bits(huffman20_.bit_length_[symbol]);
+            uint16_t unused;
+            TRY(source->read_bits(huffman20_.bit_length_[symbol], unused));
           }
 
           symbol = kBaseValues[literals_.bit_length_[pos] + 17 - symbol];
@@ -116,8 +148,9 @@ void HuffmanDecoder::read_literal_table(InputBuffer* source) {
       max_symbol += 512;
     } while (max_symbol == 768);
 
-    literals_.reset_table();
+    TRY(literals_.reset_table());
   }
+  return Status::Ok;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -126,30 +159,35 @@ void HuffmanDecoder::read_literal_table(InputBuffer* source) {
 /* and source buffers. Most of the time is spent in this routine so it's  */
 /* pretty damn optimized. */
 
-void HuffmanDecoder::decrunch(
+Status HuffmanDecoder::decrunch(
     InputBuffer* source, CircularBuffer<uint8_t>* target, size_t threshold) {
   uint32_t temp;
   uint32_t symbol;
   uint32_t count;
 
   while (target->size() < threshold && (!source->is_eof())) {
-    uint32_t symbol_data = source->peek_bits(12);
-    symbol               = literals_.table_[symbol_data];
+    uint16_t symbol_data;
+    TRY(source->peek_bits(12, symbol_data));
+    symbol = literals_.table_[symbol_data];
 
     if (symbol >= 768) {
-      source->read_bits(12);
+      uint16_t unused;
+      TRY(source->read_bits(12, unused));
 
       do { /* literal is longer than 12 bits */
-        symbol = literals_.table_[(symbol << 1) | source->read_bits(1)];
+        uint16_t bit;
+        TRY(source->read_bits(1, bit));
+        symbol = literals_.table_[(symbol << 1) | bit];
       } while (symbol >= 768);
     } else {
       temp = literals_.bit_length_[symbol];
-      source->read_bits(temp);
+      uint16_t unused;
+      TRY(source->read_bits(temp, unused));
     }
 
     // Direct byte to put in the decode buffer.
     if (symbol < 256) {
-      target->push(symbol);
+      TRY(target->push(symbol));
       continue;
     }
 
@@ -159,23 +197,33 @@ void HuffmanDecoder::decrunch(
     temp  = kSymbolBitLengths[temp];
     if ((temp >= 3) && (decrunch_method_ == 3)) {
       temp -= 3;
-      count += source->read_bits(temp) << 3;
-      count += (temp = offsets_.table_[source->peek_bits(7)]);
+      uint16_t bits;
+      TRY(source->read_bits(temp, bits));
+      count += bits << 3;
+
+      TRY(source->peek_bits(7, bits));
+      count += (temp = offsets_.table_[bits]);
       temp = offsets_.bit_length_[temp];
     } else {
-      count += source->peek_bits(temp);
+      uint16_t bits;
+      TRY(source->peek_bits(temp, bits));
+      count += bits;
       if (count == 0U) count = last_offset_;
     }
 
-    source->read_bits(temp);
+    uint16_t unused;
+    TRY(source->read_bits(temp, unused));
     last_offset_ = count;
 
     count = kBaseOffsets[temp = (symbol >> 5) & 15] + 3;
     temp  = kSymbolBitLengths[temp];
-    count += source->read_bits(temp);
+    uint16_t bits;
+    TRY(source->read_bits(temp, bits));
+    count += bits;
 
-    target->repeat(last_offset_, count);
+    TRY(target->repeat(last_offset_, count));
   }
+  return Status::Ok;
 }
 
 }  // namespace huffman

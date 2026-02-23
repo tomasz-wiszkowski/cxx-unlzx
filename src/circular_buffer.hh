@@ -1,9 +1,11 @@
 #pragma once
 
 #include <cstddef>
+#include <optional>
 #include <span>
-#include <stdexcept>
 #include <vector>
+
+#include "error.hh"
 
 template <typename T>
 class CircularBuffer {
@@ -20,18 +22,19 @@ class CircularBuffer {
   }
 
   template <typename U>
-  void push(U&& value) {
+  Status push(U&& value) {
     if (is_full()) {
-      throw std::runtime_error("Buffer overflow");
+      return Status::BufferOverflow;
     }
     buffer[tail] = std::forward<U>(value);
     tail         = (tail + 1) % buffer.size();
     full         = tail == head;
+    return Status::Ok;
   }
 
-  T pop() {
+  std::optional<T> pop() {
     if (is_empty()) {
-      throw std::runtime_error("Buffer underflow");
+      return std::nullopt;
     }
     T value = std::move(buffer[head]);
     head    = (head + 1) % buffer.size();
@@ -103,25 +106,27 @@ class CircularBuffer {
     return spans;
   }
 
-  void consume(size_t bytes) {
+  Status consume(size_t bytes) {
     if (bytes > size()) {
-      throw std::runtime_error("Buffer underflow");
+      return Status::BufferUnderflow;
     }
     head = (head + bytes) % buffer.size();
     full = false;
+    return Status::Ok;
   }
 
-  void repeat(size_t offset, size_t count) {
+  Status repeat(size_t offset, size_t count) {
     if (offset > buffer.size()) {
-      throw std::runtime_error("Buffer underflow");
+      return Status::BufferUnderflow;
     }
 
     size_t copy_from = (buffer.size() + tail - offset) % buffer.size();
 
     for (size_t i = 0; i < count; i++) {
-      push(buffer[copy_from]);
+      TRY(push(buffer[copy_from]));
       copy_from = (copy_from + 1) % buffer.size();
     }
+    return Status::Ok;
   }
 
  private:

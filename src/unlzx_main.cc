@@ -4,7 +4,43 @@
 
 #include <print>
 
+#include "error.hh"
 #include "unlzx.hh"
+
+std::string_view format_status(Status status) {
+  switch (status) {
+  case Status::Ok:
+    return "Ok";
+  case Status::BufferOverflow:
+    return "Buffer overflow";
+  case Status::BufferUnderflow:
+    return "Buffer underflow";
+  case Status::OutOfRange:
+    return "Out of range";
+  case Status::MisalignedData:
+    return "Misaligned data";
+  case Status::UnexpectedEof:
+    return "Unexpected end of file";
+  case Status::FileCreateError:
+    return "File create error";
+  case Status::FileWriteError:
+    return "File write error";
+  case Status::FileOpenError:
+    return "File open error";
+  case Status::NotLzxFile:
+    return "Not an LZX file";
+  case Status::FileMapError:
+    return "File map error";
+  case Status::ChecksumInvalid:
+    return "Checksum invalid";
+  case Status::HuffmanTableError:
+    return "Huffman table error";
+  case Status::UnknownCompression:
+    return "Unknown compression mode";
+  default:
+    return "Unknown error";
+  }
+}
 
 auto main(int argc, char** argv) -> int {
   int    result = 0;
@@ -61,11 +97,10 @@ auto main(int argc, char** argv) -> int {
 
   for (; first_file < argc; ++first_file) {
     std::println("Archive \"{}\"...", argv[first_file]);
-    try {
-      Unlzx unlzx;
-      unlzx.process_archive(argv[first_file], action);
-    } catch (std::exception& e) {
-      std::println("Error processing archive \"{}\": {}", argv[first_file], e.what());
+    Unlzx  unlzx;
+    Status status = unlzx.process_archive(argv[first_file], action);
+    if (status != Status::Ok) {
+      std::println("Error processing archive \"{}\": {}", argv[first_file], format_status(status));
     }
   }
   return 0;

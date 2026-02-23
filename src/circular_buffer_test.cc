@@ -27,7 +27,7 @@ TYPED_TEST(CircularBufferTest, IsEmptyInitially) {
 }
 
 TYPED_TEST(CircularBufferTest, AddAndReadSingleElement) {
-  this->buffer_->push(42);
+  EXPECT_EQ(this->buffer_->push(42), Status::Ok);
   EXPECT_FALSE(this->buffer_->is_empty());
   EXPECT_EQ(this->buffer_->size(), 1);
 
@@ -38,7 +38,7 @@ TYPED_TEST(CircularBufferTest, AddAndReadSingleElement) {
 
 TYPED_TEST(CircularBufferTest, AddAndReadMultipleElements) {
   for (uint8_t i = 0; i < 5; ++i) {
-    this->buffer_->push(i);
+    EXPECT_EQ(this->buffer_->push(i), Status::Ok);
   }
   EXPECT_EQ(this->buffer_->size(), 5);
 
@@ -52,7 +52,7 @@ TYPED_TEST(CircularBufferTest, AddAndReadMultipleElements) {
 TYPED_TEST(CircularBufferTest, WrapAroundAligned) {
   // Fill up buffer
   for (uint8_t i = 0; i < 10; ++i) {
-    this->buffer_->push(i);
+    EXPECT_EQ(this->buffer_->push(i), Status::Ok);
   }
 
   EXPECT_EQ(this->buffer_->size(), 10);
@@ -71,15 +71,15 @@ TYPED_TEST(CircularBufferTest, WrapAroundAligned) {
 TYPED_TEST(CircularBufferTest, WrapAroundAlignedAfterFull) {
   // Fill up buffer
   for (uint8_t i = 0; i < 10; ++i) {
-    this->buffer_->push(i);
+    EXPECT_EQ(this->buffer_->push(i), Status::Ok);
   }
 
   // Drain buffer
-  this->buffer_->consume(10);
+  EXPECT_EQ(this->buffer_->consume(10), Status::Ok);
 
   // Next, fill the buffer again
   for (uint8_t i = 0; i < 10; ++i) {
-    this->buffer_->push(i + 10);
+    EXPECT_EQ(this->buffer_->push(i + 10), Status::Ok);
   }
 
   EXPECT_EQ(this->buffer_->size(), 10);
@@ -98,19 +98,19 @@ TYPED_TEST(CircularBufferTest, WrapAroundAlignedAfterFull) {
 TYPED_TEST(CircularBufferTest, WrapAroundNotAligned) {
   // Fill up buffer
   for (uint8_t i = 0; i < 10; ++i) {
-    this->buffer_->push(i);
+    EXPECT_EQ(this->buffer_->push(i), Status::Ok);
   }
   EXPECT_TRUE(this->buffer_->is_full());
 
   // Consume 4 elements
-  this->buffer_->consume(4);
+  EXPECT_EQ(this->buffer_->consume(4), Status::Ok);
   EXPECT_FALSE(this->buffer_->is_full());
 
   // and fill the buffer again.
-  this->buffer_->push(10);
-  this->buffer_->push(11);
-  this->buffer_->push(12);
-  this->buffer_->push(13);
+  EXPECT_EQ(this->buffer_->push(10), Status::Ok);
+  EXPECT_EQ(this->buffer_->push(11), Status::Ok);
+  EXPECT_EQ(this->buffer_->push(12), Status::Ok);
+  EXPECT_EQ(this->buffer_->push(13), Status::Ok);
 
   EXPECT_EQ(this->buffer_->size(), 10);
   EXPECT_TRUE(this->buffer_->is_full());
@@ -132,11 +132,11 @@ TYPED_TEST(CircularBufferTest, WrapAroundNotAligned) {
 
 TYPED_TEST(CircularBufferTest, ConsumeElements) {
   for (uint8_t i = 0; i < 5; ++i) {
-    this->buffer_->push(i);
+    EXPECT_EQ(this->buffer_->push(i), Status::Ok);
   }
   EXPECT_EQ(this->buffer_->size(), 5);
 
-  this->buffer_->consume(3);
+  EXPECT_EQ(this->buffer_->consume(3), Status::Ok);
   EXPECT_EQ(this->buffer_->size(), 2);
 
   auto spans = this->buffer_->read(2);
@@ -173,11 +173,11 @@ TYPED_TEST(CircularBufferTest, ReadSpans) {
 
 TYPED_TEST(CircularBufferTest, ReadSpansWrapAround) {
   for (uint8_t i = 0; i < 10; ++i) {
-    this->buffer_->push(i);
+    EXPECT_EQ(this->buffer_->push(i), Status::Ok);
   }
-  this->buffer_->consume(5);
+  EXPECT_EQ(this->buffer_->consume(5), Status::Ok);
   for (uint8_t i = 10; i < 15; ++i) {
-    this->buffer_->push(i);
+    EXPECT_EQ(this->buffer_->push(i), Status::Ok);
   }
 
   auto spans = this->buffer_->spans();
@@ -192,7 +192,7 @@ TYPED_TEST(CircularBufferTest, ReadSpansWrapAround) {
 
 TYPED_TEST(CircularBufferTest, OperatorAccess) {
   for (uint8_t i = 0; i < 5; ++i) {
-    this->buffer_->push(i);
+    EXPECT_EQ(this->buffer_->push(i), Status::Ok);
   }
   EXPECT_EQ((*this->buffer_)[0], 0);
   EXPECT_EQ((*this->buffer_)[1], 1);
@@ -203,9 +203,9 @@ TYPED_TEST(CircularBufferTest, OperatorAccess) {
 
 TYPED_TEST(CircularBufferTest, Repeat) {
   for (uint8_t i = 0; i < 5; ++i) {
-    this->buffer_->push(i);
+    EXPECT_EQ(this->buffer_->push(i), Status::Ok);
   }
-  this->buffer_->repeat(3, 2);
+  EXPECT_EQ(this->buffer_->repeat(3, 2), Status::Ok);
   EXPECT_EQ(this->buffer_->size(), 7);
 
   auto spans = this->buffer_->read(7);

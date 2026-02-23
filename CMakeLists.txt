@@ -15,8 +15,8 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # Specify the C++ standard
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fexceptions")
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fexceptions")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-exceptions")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-exceptions")
 
 # TODO: Remove after replacing fopen/fclose/...
 add_compile_definitions(_CRT_SECURE_NO_WARNINGS)

@@ -4,6 +4,8 @@
 #include <cstdint>
 #include <vector>
 
+#include "error.hh"
+
 namespace huffman {
 class HuffmanTable {
  public:
@@ -15,7 +17,7 @@ class HuffmanTable {
   // The decode table.
   std::vector<uint16_t> table_;
 
-  void reset_table();
+  Status reset_table();
 };
 
 }  // namespace huffman

@@ -39,19 +39,19 @@
 /* ---------------------------------------------------------------------- */
 
 /* Opens a file for writing & creates the full path if required. */
-auto Unlzx::open_output(lzx::Entry* node) -> std::unique_ptr<FILE, decltype(&std::fclose)> {
-  std::unique_ptr<FILE, decltype(&std::fclose)> file(nullptr, &std::fclose);
+Status Unlzx::open_output(lzx::Entry* node, std::unique_ptr<FILE, decltype(&std::fclose)>& out) {
+  out.reset(nullptr);
 
   // Special case: create directory.
   if (node->unpack_size() == 0 && node->filename().ends_with("/")) {
     std::filesystem::create_directories(node->filename());
     std::print("Creating directory \"{}\"", node->filename());
-    return file;
+    return Status::Ok;
   }
 
-  file.reset(fopen(node->filename().data(), "wbe"));
+  out.reset(fopen(node->filename().data(), "wbe"));
 
-  if (!file) {
+  if (!out) {
     // Compute the name of the encompassing directory and create it.
     // This logic assumes the file could not be opened because the parent directory doesn't exist.
     std::string dirname(node->filename());
@@ -62,20 +62,20 @@ auto Unlzx::open_output(lzx::Entry* node) -> std::unique_ptr<FILE, decltype(&std
       std::filesystem::create_directories(dirname);
     }
 
-    file.reset(fopen(node->filename().data(), "wbe"));
+    out.reset(fopen(node->filename().data(), "wbe"));
   }
 
-  if (!file) {
-    throw std::runtime_error(std::format("unable to create file \"{}\"", node->filename()));
+  if (!out) {
+    return Status::FileCreateError;
   }
 
   std::print("Writing \"{}\"...", node->filename());
-  return file;
+  return Status::Ok;
 }
 
 /* ---------------------------------------------------------------------- */
 
-auto Unlzx::extract_normal(InputBuffer in_file) -> void {
+Status Unlzx::extract_normal(InputBuffer in_file) {
   huffman::HuffmanDecoder decoder;
   uint32_t                unpack_size     = 0;
   size_t                  decrunch_length = 0;
@@ -85,7 +85,8 @@ auto Unlzx::extract_normal(InputBuffer in_file) -> void {
   while (!merged_files_.empty()) {
     auto node = std::move(merged_files_.front());
     merged_files_.pop_front();
-    auto out_file = open_output(node.get());
+    std::unique_ptr<FILE, decltype(&std::fclose)> out_file(nullptr, &std::fclose);
+    TRY(open_output(node.get(), out_file));
 
     crc::Crc32 crc_calc;
 
@@ -93,11 +94,11 @@ auto Unlzx::extract_normal(InputBuffer in_file) -> void {
     while (unpack_size > 0) {
       if (buffer.is_empty()) {
         if (decrunch_length <= 0) {
-          decoder.read_literal_table(&in_file);
+          TRY(decoder.read_literal_table(&in_file));
           decrunch_length = decoder.decrunch_length();
         }
 
-        decoder.decrunch(&in_file, &buffer, std::min(decrunch_length, size_t(65536 - 256)));
+        TRY(decoder.decrunch(&in_file, &buffer, std::min(decrunch_length, size_t(65536 - 256))));
         size_t have_bytes = std::min(decrunch_length, buffer.size());
         decrunch_length -= have_bytes;
       }
@@ -111,7 +112,7 @@ auto Unlzx::extract_normal(InputBuffer in_file) -> void {
 
         if (out_file) {
           if (fwrite(span.data(), 1, count, out_file.get()) != count) {
-            throw std::runtime_error(std::format("could not write file \"{}\"", node->filename()));
+            return Status::FileWriteError;
           }
         }
 
@@ -121,33 +122,38 @@ auto Unlzx::extract_normal(InputBuffer in_file) -> void {
 
     std::println(" crc {}", (node->data_crc() == crc_calc.sum()) ? "good" : "bad");
   }
+  return Status::Ok;
 }
 
 /* ---------------------------------------------------------------------- */
 
-auto Unlzx::extract_store(InputBuffer in_file) -> void {
+Status Unlzx::extract_store(InputBuffer in_file) {
   while (!merged_files_.empty()) {
     auto node = std::move(merged_files_.front());
     merged_files_.pop_front();
 
     uint32_t unpack_size = std::min(in_file.available(), node->unpack_size());
 
-    auto view     = in_file.read_span(unpack_size);
-    auto out_file = open_output(node.get());
-    auto written  = 0;
+    std::span<const uint8_t> view;
+    TRY(in_file.read_span(unpack_size, view));
+
+    std::unique_ptr<FILE, decltype(&std::fclose)> out_file(nullptr, &std::fclose);
+    TRY(open_output(node.get(), out_file));
+    auto written = 0;
 
     if (out_file) {
       written = fwrite(view.data(), 1, view.size(), out_file.get());
     }
 
-    if (written != view.size()) {
-      throw std::runtime_error(std::format("could not write file \"{}\"", node->filename()));
+    if (written != view.size() && out_file) {
+      return Status::FileWriteError;
     }
 
     crc::Crc32 crc_calc;
     crc_calc.calc(view.data(), view.size());
     std::println(" crc {}", (node->data_crc() == crc_calc.sum()) ? "good" : "bad");
   }
+  return Status::Ok;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -162,8 +168,11 @@ auto Unlzx::report_unknown() -> void {
 
 /* ---------------------------------------------------------------------- */
 
-auto Unlzx::extract_archive() -> void {
-  while (auto archive_header = lzx::Entry::from_buffer(&*in_buffer_)) {
+Status Unlzx::extract_archive() {
+  std::unique_ptr<lzx::Entry> archive_header;
+  Status                      status;
+  while ((status = lzx::Entry::from_buffer(&*in_buffer_, archive_header)) == Status::Ok &&
+         archive_header) {
     size_t pack_size        = archive_header->pack_size();
     auto   compression_type = archive_header->compression_info().mode();
 
@@ -172,26 +181,33 @@ auto Unlzx::extract_archive() -> void {
     // Unpack merged files.
     if (pack_size != 0U) {
       switch (compression_type) {
-      case lzx::CompressionInfo::Mode::kNone:
-        extract_store(in_buffer_->read_buffer(pack_size));
+      case lzx::CompressionInfo::Mode::kNone: {
+        InputBuffer sub;
+        TRY(in_buffer_->read_buffer(pack_size, sub));
+        TRY(extract_store(sub));
         break;
+      }
 
-      case lzx::CompressionInfo::Mode::kNormal:
-        extract_normal(in_buffer_->read_buffer(pack_size));
+      case lzx::CompressionInfo::Mode::kNormal: {
+        InputBuffer sub;
+        TRY(in_buffer_->read_buffer(pack_size, sub));
+        TRY(extract_normal(sub));
         break;
+      }
 
       default:
         report_unknown();
-        in_buffer_->skip(pack_size);
+        TRY(in_buffer_->skip(pack_size));
         break;
       }
     }
   }
+  return status;
 }
 
 /* ---------------------------------------------------------------------- */
 
-auto Unlzx::list_archive() -> void {
+Status Unlzx::list_archive() {
   size_t total_pack   = 0;
   size_t total_unpack = 0;
   size_t total_files  = 0;
@@ -200,7 +216,10 @@ auto Unlzx::list_archive() -> void {
   std::println("Unpacked Packed   Time     Date       Attrib   Name");
   std::println("-------- -------- -------- ---------- -------- ----");
 
-  while (auto archive_header = lzx::Entry::from_buffer(&*in_buffer_)) {
+  std::unique_ptr<lzx::Entry> archive_header;
+  while (!in_buffer_->is_eof()) {
+    TRY(lzx::Entry::from_buffer(&*in_buffer_, archive_header));
+
     uint32_t    unpack_size = archive_header->unpack_size();
     size_t      pack_size   = archive_header->pack_size();
     const auto& stamp       = archive_header->datestamp();
@@ -230,36 +249,34 @@ auto Unlzx::list_archive() -> void {
       merge_size = 0;
     }
 
-    in_buffer_->skip(pack_size);
+    TRY(in_buffer_->skip(pack_size));
   }
 
   std::println("-------- -------- -------- ---------- -------- ----");
   std::print("{:8} {:8} ", total_unpack, total_pack);
   std::println("{} file{}", total_files, ((total_files == 1) ? "" : "s"));
+  return Status::Ok;
 }
 
-auto Unlzx::process_archive(const char* filename, Action action) -> void {
-  mmap_buffer_ = MmapInputBuffer::for_file(filename);
-  if (!mmap_buffer_) {
-    throw std::runtime_error("could not open file");
-  }
+Status Unlzx::process_archive(const char* filename, Action action) {
+  TRY(MmapInputBuffer::for_file(filename, mmap_buffer_));
+
   in_buffer_ = mmap_buffer_->get();
 
   uint8_t header[10]{};
 
-  in_buffer_->read_into(header, sizeof(header));
+  TRY(in_buffer_->read_into(header, sizeof(header)));
 
   if ((header[0] != 'L') || (header[1] != 'Z') || (header[2] != 'X')) {
-    throw std::runtime_error("not an LZX file");
+    return Status::NotLzxFile;
   }
 
   switch (action) {
   case Action::Extract:
-    extract_archive();
-    break;
+    return extract_archive();
 
   case Action::View:
-    list_archive();
-    break;
+    return list_archive();
   }
+  return Status::Ok;
 }

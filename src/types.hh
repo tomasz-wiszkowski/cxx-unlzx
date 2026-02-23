@@ -2,6 +2,13 @@
 
 #include <memory>
 
+#ifdef _MSC_VER
+#define PACKED
+#pragma pack(push, 1)
+#else
+#define PACKED __attribute__((packed))
+#endif
+
 /// @brief A value that can be stored in a specific endianness.
 /// @tparam T the type of the value
 /// @tparam E the endianness of the value
@@ -30,7 +37,11 @@ class Value {
   constexpr T value() const {
     return transform<E, std::endian::native>(value_);
   }
-} __attribute__((packed));
+} PACKED;
+
+#ifdef _MSC_VER
+#pragma pack(pop)
+#endif
 
 static_assert(sizeof(uint32_t) == sizeof(Value<uint32_t, std::endian::big>));
 static_assert(sizeof(uint32_t) == sizeof(Value<uint32_t, std::endian::little>));

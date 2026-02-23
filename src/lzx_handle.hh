@@ -5,6 +5,7 @@
 #include <format>
 #include <memory>
 
+#include "error.hh"
 #include "mmap_buffer.hh"
 #include "types.hh"
 
@@ -25,7 +26,7 @@ union ProtectionBits {
 
   ProtectionBits() : raw(0) {}
   explicit ProtectionBits(uint8_t from) : raw(from) {}
-} __attribute__((packed));
+} PACKED;
 static_assert(sizeof(ProtectionBits) == 1);
 
 
@@ -74,7 +75,7 @@ class DateStamp {
   constexpr uint32_t second() const {
     return stamp_.value().seconds;
   }
-} __attribute__((packed));
+} PACKED;
 static_assert(sizeof(DateStamp) == 4);
 
 
@@ -93,7 +94,7 @@ class CompressionInfo {
   Mode    mode_ : 5;  // Guessed.
   uint8_t reserved_ : 3;
 
-} __attribute__((packed));
+} PACKED;
 static_assert(sizeof(CompressionInfo) == 1);
 
 
@@ -107,7 +108,7 @@ class Flags {
   uint8_t merged_ : 1;
   uint8_t reserved_ : 7;
 
-} __attribute__((packed));
+} PACKED;
 static_assert(sizeof(CompressionInfo) == 1);
 
 
@@ -129,7 +130,7 @@ class Entry {
     Value<uint32_t, std::endian::little> data_crc_;          // Data CRC
     Value<uint32_t, std::endian::little> header_crc_;        // Header CRC
     uint8_t                              filename_length_;   // Filename length
-  } __attribute__((packed)) metadata_;
+  } PACKED metadata_;
 
   static_assert(sizeof(metadata_) == 31);
 
@@ -173,7 +174,7 @@ class Entry {
     return comment_;
   }
 
-  static std::unique_ptr<Entry> from_buffer(InputBuffer* buffer);
+  static Status from_buffer(InputBuffer* buffer, std::unique_ptr<Entry>& out);
 };
 
 }  // namespace lzx

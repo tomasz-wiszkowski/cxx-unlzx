@@ -7,26 +7,33 @@
 
 namespace lzx {
 
-auto Entry::from_buffer(InputBuffer* buffer) -> std::unique_ptr<Entry> {
-  if (buffer->is_eof()) return {};
+Status Entry::from_buffer(InputBuffer* buffer, std::unique_ptr<Entry>& out) {
+  if (buffer->is_eof()) return Status::Ok;
 
-  auto result = std::make_unique<Entry>();
-  buffer->read_into(&result->metadata_, sizeof(result->metadata_));
+  auto   result = std::make_unique<Entry>();
+  TRY(buffer->read_into(&result->metadata_, sizeof(result->metadata_)));
 
   uint32_t const header_crc     = result->metadata_.header_crc_.value();
   result->metadata_.header_crc_ = 0;
-  result->filename_             = buffer->read_string_view(result->metadata_.filename_length_);
-  result->comment_              = buffer->read_string_view(result->metadata_.comment_length_);
+
+  std::string_view filename;
+  TRY(buffer->read_string_view(result->metadata_.filename_length_, filename));
+  result->filename_ = filename;
+
+  std::string_view comment;
+  TRY(buffer->read_string_view(result->metadata_.comment_length_, comment));
+  result->comment_ = comment;
 
   crc::Crc32 crc_calc;
   crc_calc.calc(&result->metadata_, sizeof(result->metadata_));
   crc_calc.calc(result->filename_.data(), result->filename_.size());
   crc_calc.calc(result->comment_.data(), result->comment_.size());
   if (crc_calc.sum() != header_crc) {
-    throw std::runtime_error("File header checksum invalid.");
+    return Status::ChecksumInvalid;
   }
 
-  return result;
+  out = std::move(result);
+  return Status::Ok;
 }
 
 
