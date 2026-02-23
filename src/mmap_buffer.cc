@@ -30,7 +30,7 @@ Status MmapInputBuffer::for_file(const char* filepath, std::unique_ptr<MmapInput
   if (file_handle == INVALID_HANDLE_VALUE) return Status::FileOpenError;
 
   LARGE_INTEGER file_size;
-  if (!GetFileSizeEx(file_handle, &file_size)) {
+  if (GetFileSizeEx(file_handle, &file_size) == FALSE) {
     CloseHandle(file_handle);
     return Status::FileOpenError;
   }

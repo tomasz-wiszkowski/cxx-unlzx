@@ -26,14 +26,26 @@ class Value {
   }
 
  public:
+  /**
+   * @brief Implicit conversion operator to the underlying type.
+   * @return The value converted to native endianness.
+   */
   constexpr operator T() const {
     return value();
   }
 
+  /**
+   * @brief Assignment operator to set the value.
+   * @param value The new value in native endianness.
+   */
   constexpr void operator=(T value) {
     value_ = transform<std::endian::native, E>(value);
   }
 
+  /**
+   * @brief Gets the stored value converted to native endianness.
+   * @return The native endianness value.
+   */
   constexpr T value() const {
     return transform<E, std::endian::native>(value_);
   }
@@ -60,14 +72,26 @@ class TypedValue {
   Value<typename T::RealType, E> value_;
 
  public:
+  /**
+   * @brief Implicit conversion operator to the typed value.
+   * @return The strongly-typed value.
+   */
   constexpr operator T() const {
     return T(value_);
   }
 
+  /**
+   * @brief Assignment operator to set the typed value.
+   * @param value The strongly-typed value to set.
+   */
   constexpr void operator=(T value) {
     value_ = value;
   }
 
+  /**
+   * @brief Gets the typed value.
+   * @return The strongly-typed value.
+   */
   constexpr T value() const {
     return T(value_.value());
   }

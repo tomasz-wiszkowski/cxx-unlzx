@@ -25,6 +25,7 @@ constexpr uint8_t kSymbolLongerThanSixBits = 20;
 HuffmanDecoder::HuffmanDecoder()
     : offsets_(7, 8, 128), huffman20_(6, 20, 96), literals_(12, 768, 5120) {}
 
+// NOLINTBEGIN(readability-function-cognitive-complexity)
 Status HuffmanDecoder::read_literal_table(InputBuffer* source) {
   uint32_t symbol;
   uint32_t pos;
@@ -39,20 +40,22 @@ Status HuffmanDecoder::read_literal_table(InputBuffer* source) {
 
   // Read and build the offset Huffman table
   if (decrunch_method_ == 3) {
-    for (auto& bl : offsets_.bit_length_) {
+    for (auto& bit_length : offsets_.bit_length_) {
       uint16_t val;
       TRY(source->read_bits(3, val));
-      bl = static_cast<uint8_t>(val);
+      bit_length = static_cast<uint8_t>(val);
     }
     TRY(offsets_.reset_table());
   }
 
   // Read decrunch length
-  uint16_t b1, b2, b3;
-  TRY(source->read_bits(8, b1));
-  TRY(source->read_bits(8, b2));
-  TRY(source->read_bits(8, b3));
-  decrunch_length_ = (b1 << 16) | (b2 << 8) | b3;
+  uint16_t hi_byte;
+  uint16_t mid_byte;
+  uint16_t lo_byte;
+  TRY(source->read_bits(8, hi_byte));
+  TRY(source->read_bits(8, mid_byte));
+  TRY(source->read_bits(8, lo_byte));
+  decrunch_length_ = (hi_byte << 16) | (mid_byte << 8) | lo_byte;
 
   auto fill_literals_bit_lengths = [&](uint32_t byte_count, uint8_t value) {
     uint32_t fill_length = std::min(byte_count, max_symbol - pos);
@@ -67,10 +70,10 @@ Status HuffmanDecoder::read_literal_table(InputBuffer* source) {
     max_symbol = 256;
 
     do {
-      for (auto& bl : huffman20_.bit_length_) {
+      for (auto& bit_length : huffman20_.bit_length_) {
         uint16_t val;
         TRY(source->read_bits(4, val));
-        bl = static_cast<uint8_t>(val);
+        bit_length = static_cast<uint8_t>(val);
       }
       TRY(huffman20_.reset_table());
 
@@ -152,6 +155,7 @@ Status HuffmanDecoder::read_literal_table(InputBuffer* source) {
   }
   return Status::Ok;
 }
+// NOLINTEND(readability-function-cognitive-complexity)
 
 /* ---------------------------------------------------------------------- */
 
@@ -159,6 +163,7 @@ Status HuffmanDecoder::read_literal_table(InputBuffer* source) {
 /* and source buffers. Most of the time is spent in this routine so it's  */
 /* pretty damn optimized. */
 
+// NOLINTBEGIN(readability-function-cognitive-complexity)
 Status HuffmanDecoder::decrunch(
     InputBuffer* source, std::span<uint8_t> target, size_t& pos, size_t threshold) {
   uint32_t temp;
@@ -232,5 +237,6 @@ Status HuffmanDecoder::decrunch(
   }
   return Status::Ok;
 }
+// NOLINTEND(readability-function-cognitive-complexity)
 
 }  // namespace huffman

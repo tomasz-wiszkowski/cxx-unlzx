@@ -22,6 +22,7 @@ HuffmanTable::HuffmanTable(size_t table_bits, size_t num_symbols, size_t num_dec
  * @return bool Returns true on success, false if an error occurred (e.g., table creation was
  * aborted).
  */
+// NOLINTBEGIN(readability-function-cognitive-complexity)
 Status HuffmanTable::reset_table() {
   uint8_t  current_bit_length = 0;
   uint32_t symbol;
@@ -115,5 +116,6 @@ Status HuffmanTable::reset_table() {
 
   return Status::Ok;
 }
+// NOLINTEND(readability-function-cognitive-complexity)
 
 }  // namespace huffman

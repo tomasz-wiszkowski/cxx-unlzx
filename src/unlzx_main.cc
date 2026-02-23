@@ -87,8 +87,8 @@ public:
   FilteredEntries(const std::map<std::string, LzxEntry>& entries, std::span<char* const> names, bool use_regex)
       : entries_(entries), names_(names), use_regex_(use_regex) {
     if (use_regex) {
-      for (const char* p : names) {
-        res_.emplace_back(p, std::regex::ECMAScript | std::regex::icase);
+      for (const char* pattern : names) {
+        res_.emplace_back(pattern, std::regex::ECMAScript | std::regex::icase);
       }
     }
   }
@@ -306,13 +306,12 @@ auto main(int argc, char** argv) -> int {
     auto map_entries = unlzx.list_archive();
     FilteredEntries entries(map_entries, std::span<char* const>(argv + first_file + 1, static_cast<size_t>(argc - (first_file + 1))), use_regex);
 
-    if (action == Action::List) {
-      return handle_list(entries);
-    } else if (action == Action::View) {
-      return handle_view(entries);
-    } else {
-      return handle_extract(entries);
+    switch (action) {
+      case Action::List: return handle_list(entries);
+      case Action::View: return handle_view(entries);
+      case Action::Extract: return handle_extract(entries);
     }
+
   }
   return 0;
 }

@@ -50,6 +50,8 @@ std::map<std::string, LzxEntry> Unlzx::list_archive() {
   };
   std::vector<PendingMerge> pending_merges;
 
+  if (!in_buffer_) return {};
+
   while (!in_buffer_->is_eof()) {
     if (lzx::Entry::from_buffer(&*in_buffer_, archive_header) != Status::Ok) {
       break;

@@ -26,8 +26,8 @@ static std::filesystem::path from_latin1(const std::string& latin1) {
 #ifdef _WIN32
   std::wstring wide;
   wide.reserve(latin1.length());
-  for (unsigned char c : latin1) {
-    wide.push_back(static_cast<wchar_t>(c));
+  for (auto character : latin1) {
+    wide.push_back(static_cast<wchar_t>(character));
   }
   return std::filesystem::path(wide);
 #else
@@ -74,8 +74,7 @@ std::optional<size_t> LzxEntry::pack_size() const {
       if (segment.block()) {
         size_t block_unpacked = segment.block()->total_unpacked_size();
         if (block_unpacked > 0) {
-          double ratio = static_cast<double>(segment.decompressed_length()) / block_unpacked;
-          total_guessed += static_cast<size_t>(ratio * segment.block()->packed_size());
+          total_guessed = static_cast<size_t>((uint64_t)segment.decompressed_length() * segment.block()->packed_size() / block_unpacked);
         }
       }
     }

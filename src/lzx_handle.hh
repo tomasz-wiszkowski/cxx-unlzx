@@ -52,26 +52,50 @@ class DateStamp {
   TypedValue<DateStampInternal, std::endian::big> stamp_;
 
  public:
+  /**
+   * @brief Gets the year from the datestamp.
+   * @return The year (since 1970).
+   */
   constexpr uint32_t year() const {
     return stamp_.value().year + 1970;
   }
 
+  /**
+   * @brief Gets the month from the datestamp.
+   * @return The month (1-12).
+   */
   constexpr uint32_t month() const {
     return stamp_.value().month;
   }
 
+  /**
+   * @brief Gets the day from the datestamp.
+   * @return The day of the month (1-31).
+   */
   constexpr uint32_t day() const {
     return stamp_.value().day;
   }
 
+  /**
+   * @brief Gets the hour from the datestamp.
+   * @return The hour (0-23).
+   */
   constexpr uint32_t hour() const {
     return stamp_.value().hours;
   }
 
+  /**
+   * @brief Gets the minute from the datestamp.
+   * @return The minute (0-59).
+   */
   constexpr uint32_t minute() const {
     return stamp_.value().minutes;
   }
 
+  /**
+   * @brief Gets the second from the datestamp.
+   * @return The second (0-59).
+   */
   constexpr uint32_t second() const {
     return stamp_.value().seconds;
   }
@@ -86,6 +110,10 @@ class CompressionInfo {
     kNormal = 2,
   };
 
+  /**
+   * @brief Gets the compression mode.
+   * @return The compression Mode enum value.
+   */
   constexpr Mode mode() const {
     return mode_;
   }
@@ -100,6 +128,10 @@ static_assert(sizeof(CompressionInfo) == 1);
 
 class Flags {
  public:
+  /**
+   * @brief Checks if the entry is merged.
+   * @return True if the entry is merged, false otherwise.
+   */
   constexpr bool is_merged() const {
     return merged_;
   }
@@ -138,42 +170,84 @@ class Entry {
   std::string comment_;
 
  public:
+  /**
+   * @brief Gets the unpack size of the entry.
+   * @return The unpacked size in bytes.
+   */
   constexpr size_t unpack_size() const {
     return metadata_.unpack_size_.value();
   }
 
+  /**
+   * @brief Gets the packed size of the entry.
+   * @return The packed size in bytes.
+   */
   constexpr size_t pack_size() const {
     return metadata_.pack_size_.value();
   }
 
+  /**
+   * @brief Gets the datestamp of the entry.
+   * @return The DateStamp object.
+   */
   constexpr const DateStamp& datestamp() const {
     return metadata_.date_;
   }
 
+  /**
+   * @brief Gets the data CRC-32 of the entry.
+   * @return The CRC-32 value.
+   */
   constexpr uint32_t data_crc() const {
     return metadata_.data_crc_.value();
   }
 
+  /**
+   * @brief Gets the compression info of the entry.
+   * @return The CompressionInfo object.
+   */
   constexpr CompressionInfo compression_info() const {
     return metadata_.compression_info_;
   }
 
+  /**
+   * @brief Gets the protection bits (attributes) of the entry.
+   * @return The ProtectionBits object.
+   */
   constexpr ProtectionBits attributes() const {
     return metadata_.attributes_;
   }
 
+  /**
+   * @brief Gets the flags of the entry.
+   * @return The Flags object.
+   */
   constexpr Flags flags() const {
     return metadata_.flags_;
   }
 
+  /**
+   * @brief Gets the filename of the entry.
+   * @return The filename string.
+   */
   constexpr const std::string& filename() const {
     return filename_;
   }
 
+  /**
+   * @brief Gets the comment of the entry.
+   * @return The comment string.
+   */
   constexpr const std::string& comment() const {
     return comment_;
   }
 
+  /**
+   * @brief Reads an Entry from the given buffer.
+   * @param buffer The input buffer to read from.
+   * @param out A unique pointer to store the parsed Entry.
+   * @return Status indicating success or the specific error encountered.
+   */
   static Status from_buffer(InputBuffer* buffer, std::unique_ptr<Entry>& out);
 };
 
