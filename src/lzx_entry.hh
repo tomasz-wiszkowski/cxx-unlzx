@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -25,10 +26,16 @@ public:
   std::shared_ptr<LzxBlock> block() const;
 
   /**
-   * @brief Gets the decompressed offset.
-   * @return The decompressed offset.
+   * @brief Gets the segment of the block data.
+   * @return The span to the segment data.
    */
-  size_t decompressed_offset() const;
+  std::span<const uint8_t> get_data() const;
+
+  /**
+   * @brief Gets the status of the last decompression operation from the block.
+   * @return The Status code.
+   */
+  Status get_status() const;
 
   /**
    * @brief Gets the decompressed length.

@@ -7,8 +7,15 @@ std::shared_ptr<LzxBlock> LzxFileSegment::block() const {
   return block_;
 }
 
-size_t LzxFileSegment::decompressed_offset() const {
-  return decompressed_offset_;
+std::span<const uint8_t> LzxFileSegment::get_data() const {
+  if (auto data = block_->get_data()) {
+    return data->subspan(decompressed_offset_, decompressed_length_);
+  }
+  return {};
+}
+
+Status LzxFileSegment::get_status() const {
+  return block_->get_status();
 }
 
 size_t LzxFileSegment::decompressed_length() const {
