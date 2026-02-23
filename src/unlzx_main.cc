@@ -191,14 +191,25 @@ int handle_extract(const FilteredEntries& entries) {
 
     std::print("Writing \"{}\"...", name);
     crc::Crc32 crc_calc;
+    bool       error = false;
     for (const auto& segment : entry.segments()) {
       auto data = segment.data();
+
+      if (segment.status() != Status::Ok) {
+        std::println(" error: {}", format_status(segment.status()));
+        error = true;
+        break;
+      }
+
       crc_calc.calc(data.data(), data.size());
       if (!out_file.write(reinterpret_cast<const char*>(data.data()), data.size())) {
         std::println(" error writing file");
-        return 1;
+        error = true;
+        break;
       }
     }
+
+    if (error) continue;
 
     std::println(" crc {}", (entry.metadata().data_crc() == crc_calc.sum()) ? "good" : "bad");
   }

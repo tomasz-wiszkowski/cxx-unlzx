@@ -18,12 +18,6 @@ public:
 
   /**
    * @brief Adds a file segment to the entry being built.
-   * @param segment The segment to add.
-   */
-  void add_segment(LzxFileSegment segment);
-
-  /**
-   * @brief Adds a file segment to the entry being built.
    * @param block The block associated with this segment.
    * @param decompressed_offset The decompressed offset.
    * @param decompressed_length The decompressed length.

@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cstring>
 
-#include "circular_buffer.hh"
 #include "huffman_decoder.hh"
 
 std::optional<std::span<const uint8_t>> LzxBlock::data() {

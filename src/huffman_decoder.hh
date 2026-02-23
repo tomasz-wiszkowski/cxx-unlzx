@@ -4,7 +4,6 @@
 #include <span>
 #include <vector>
 
-#include "circular_buffer.hh"
 #include "error.hh"
 #include "huffman_table.hh"
 #include "mmap_buffer.hh"

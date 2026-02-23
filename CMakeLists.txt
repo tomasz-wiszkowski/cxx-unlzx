@@ -28,7 +28,6 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-exceptions")
 add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
 
 set(SOURCES
-    src/circular_buffer.cc
     src/crc.cc
     src/huffman_decoder.cc
     src/huffman_table.cc
@@ -41,7 +40,6 @@ set(SOURCES
 )
 
 set(HEADERS
-    src/circular_buffer.hh
     src/crc.hh
     src/huffman_decoder.hh
     src/lzx_block.hh
@@ -85,7 +83,6 @@ if (BUILD_TESTS AND IS_DEBUG)
     endif()
 
     add_executable(unlzx_test
-        src/circular_buffer_test.cc
         src/crc_test.cc
         src/mmap_buffer_test.cc
         src/unlzx_test.cc
