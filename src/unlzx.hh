@@ -30,7 +30,17 @@ struct LzxEntry {
 
   std::optional<size_t> pack_size() const {
     if (metadata.flags().is_merged()) {
-      return std::nullopt;
+      size_t total_guessed = 0;
+      for (const auto& segment : segments) {
+        if (segment.block) {
+          size_t block_unpacked = segment.block->total_unpacked_size();
+          if (block_unpacked > 0) {
+            double ratio = static_cast<double>(segment.decompressed_length) / block_unpacked;
+            total_guessed += static_cast<size_t>(ratio * segment.block->packed_size());
+          }
+        }
+      }
+      return total_guessed;
     }
     return metadata.pack_size();
   }

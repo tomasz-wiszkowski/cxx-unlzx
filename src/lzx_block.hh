@@ -32,6 +32,18 @@ public:
    */
   Status get_status() const { return status_; }
 
+  /**
+   * @brief Gets the packed (compressed) size of the block.
+   * @return The packed size in bytes.
+   */
+  size_t packed_size() const { return node_.pack_size(); }
+
+  /**
+   * @brief Gets the total unpacked (decompressed) size of the block.
+   * @return The total unpacked size in bytes.
+   */
+  size_t total_unpacked_size() const { return total_unpacked_size_; }
+
 private:
   lzx::Entry node_;
   InputBuffer in_file_;
