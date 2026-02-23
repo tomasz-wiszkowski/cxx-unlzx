@@ -8,3 +8,4 @@ Testing/
 build/
 bin/
 compile_commands.json
+*.pdb

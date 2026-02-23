@@ -62,7 +62,8 @@ auto main(int argc, char** argv) -> int {
   for (; first_file < argc; ++first_file) {
     std::println("Archive \"{}\"...", argv[first_file]);
     try {
-      process_archive(argv[first_file], action);
+      Unlzx unlzx;
+      unlzx.process_archive(argv[first_file], action);
     } catch (std::exception& e) {
       std::println("Error processing archive \"{}\": {}", argv[first_file], e.what());
     }

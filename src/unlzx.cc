@@ -38,16 +38,8 @@
 
 /* ---------------------------------------------------------------------- */
 
-static const unsigned char kVersion[] = "$VER: unlzx 1.2 (22.02.26)";
-
-/* ---------------------------------------------------------------------- */
-
-static unsigned char info_header[10];
-
-static std::deque<std::unique_ptr<lzx::Entry>> merged_files;
-
 /* Opens a file for writing & creates the full path if required. */
-static auto open_output(lzx::Entry* node) -> std::unique_ptr<FILE, decltype(&std::fclose)> {
+auto Unlzx::open_output(lzx::Entry* node) -> std::unique_ptr<FILE, decltype(&std::fclose)> {
   std::unique_ptr<FILE, decltype(&std::fclose)> file(nullptr, &std::fclose);
 
   // Special case: create directory.
@@ -83,16 +75,16 @@ static auto open_output(lzx::Entry* node) -> std::unique_ptr<FILE, decltype(&std
 
 /* ---------------------------------------------------------------------- */
 
-static auto extract_normal(InputBuffer in_file) -> void {
+auto Unlzx::extract_normal(InputBuffer in_file) -> void {
   huffman::HuffmanDecoder decoder;
   uint32_t                unpack_size     = 0;
   size_t                  decrunch_length = 0;
 
   CircularBuffer<uint8_t> buffer(65536);
 
-  while (!merged_files.empty()) {
-    auto node = std::move(merged_files.front());
-    merged_files.pop_front();
+  while (!merged_files_.empty()) {
+    auto node = std::move(merged_files_.front());
+    merged_files_.pop_front();
     auto out_file = open_output(node.get());
 
     crc::Crc32 crc_calc;
@@ -133,10 +125,10 @@ static auto extract_normal(InputBuffer in_file) -> void {
 
 /* ---------------------------------------------------------------------- */
 
-static auto extract_store(InputBuffer in_file) -> void {
-  while (!merged_files.empty()) {
-    auto node = std::move(merged_files.front());
-    merged_files.pop_front();
+auto Unlzx::extract_store(InputBuffer in_file) -> void {
+  while (!merged_files_.empty()) {
+    auto node = std::move(merged_files_.front());
+    merged_files_.pop_front();
 
     uint32_t unpack_size = std::min(in_file.available(), node->unpack_size());
 
@@ -160,37 +152,37 @@ static auto extract_store(InputBuffer in_file) -> void {
 
 /* ---------------------------------------------------------------------- */
 
-static auto report_unknown() -> void {
-  while (!merged_files.empty()) {
-    auto node = std::move(merged_files.front());
-    merged_files.pop_front();
+auto Unlzx::report_unknown() -> void {
+  while (!merged_files_.empty()) {
+    auto node = std::move(merged_files_.front());
+    merged_files_.pop_front();
     std::println("Skipping \"{}\": unknown compression mode.", node->filename());
   }
 }
 
 /* ---------------------------------------------------------------------- */
 
-static auto extract_archive(InputBuffer in_file) -> void {
-  while (auto archive_header = lzx::Entry::from_buffer(&in_file)) {
+auto Unlzx::extract_archive() -> void {
+  while (auto archive_header = lzx::Entry::from_buffer(&*in_buffer_)) {
     size_t pack_size        = archive_header->pack_size();
     auto   compression_type = archive_header->compression_info().mode();
 
-    merged_files.emplace_back(std::move(archive_header));
+    merged_files_.emplace_back(std::move(archive_header));
 
     // Unpack merged files.
     if (pack_size != 0U) {
       switch (compression_type) {
       case lzx::CompressionInfo::Mode::kNone:
-        extract_store(in_file.read_buffer(pack_size));
+        extract_store(in_buffer_->read_buffer(pack_size));
         break;
 
       case lzx::CompressionInfo::Mode::kNormal:
-        extract_normal(in_file.read_buffer(pack_size));
+        extract_normal(in_buffer_->read_buffer(pack_size));
         break;
 
       default:
         report_unknown();
-        in_file.skip(pack_size);
+        in_buffer_->skip(pack_size);
         break;
       }
     }
@@ -199,7 +191,7 @@ static auto extract_archive(InputBuffer in_file) -> void {
 
 /* ---------------------------------------------------------------------- */
 
-static auto list_archive(InputBuffer in_file) -> void {
+auto Unlzx::list_archive() -> void {
   size_t total_pack   = 0;
   size_t total_unpack = 0;
   size_t total_files  = 0;
@@ -208,7 +200,7 @@ static auto list_archive(InputBuffer in_file) -> void {
   std::println("Unpacked Packed   Time     Date       Attrib   Name");
   std::println("-------- -------- -------- ---------- -------- ----");
 
-  while (auto archive_header = lzx::Entry::from_buffer(&in_file)) {
+  while (auto archive_header = lzx::Entry::from_buffer(&*in_buffer_)) {
     uint32_t    unpack_size = archive_header->unpack_size();
     size_t      pack_size   = archive_header->pack_size();
     const auto& stamp       = archive_header->datestamp();
@@ -238,7 +230,7 @@ static auto list_archive(InputBuffer in_file) -> void {
       merge_size = 0;
     }
 
-    in_file.skip(pack_size);
+    in_buffer_->skip(pack_size);
   }
 
   std::println("-------- -------- -------- ---------- -------- ----");
@@ -246,19 +238,16 @@ static auto list_archive(InputBuffer in_file) -> void {
   std::println("{} file{}", total_files, ((total_files == 1) ? "" : "s"));
 }
 
-auto process_archive(char* filename, Action action) -> void {
-  auto mmap_buffer = MmapInputBuffer::for_file(filename);
-  auto in_buffer   = mmap_buffer->get();
-
-  std::unique_ptr<FILE, decltype(&std::fclose)> in_file(fopen(filename, "rbe"), &std::fclose);
-  if (in_file == nullptr) {
+auto Unlzx::process_archive(const char* filename, Action action) -> void {
+  mmap_buffer_ = MmapInputBuffer::for_file(filename);
+  if (!mmap_buffer_) {
     throw std::runtime_error("could not open file");
   }
+  in_buffer_ = mmap_buffer_->get();
 
   uint8_t header[10]{};
 
-  in_buffer.read_into(header, sizeof(header));
-  fseek(in_file.get(), sizeof(header), SEEK_CUR);
+  in_buffer_->read_into(header, sizeof(header));
 
   if ((header[0] != 'L') || (header[1] != 'Z') || (header[2] != 'X')) {
     throw std::runtime_error("not an LZX file");
@@ -266,11 +255,11 @@ auto process_archive(char* filename, Action action) -> void {
 
   switch (action) {
   case Action::Extract:
-    extract_archive(in_buffer);
+    extract_archive();
     break;
 
   case Action::View:
-    list_archive(in_buffer);
+    list_archive();
     break;
   }
 }
