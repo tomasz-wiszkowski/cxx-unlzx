@@ -3,7 +3,10 @@
 #endif
 
 #include <print>
+#include <regex>
 #include <set>
+#include <span>
+#include <vector>
 
 #include "error.hh"
 #include "unlzx.hh"
@@ -79,17 +82,39 @@ int handle_list(Unlzx& unlzx) {
   return 0;
 }
 
-int handle_view(Unlzx& unlzx, const std::string& target_file) {
+int handle_view(Unlzx& unlzx, std::span<char* const> patterns) {
   auto entries = unlzx.list_archive();
-  auto it = entries.find(target_file);
-  if (it == entries.end()) {
-    std::println("File \"{}\" not found in archive", target_file);
-    return 1;
+  int matched_files = 0;
+
+  std::vector<std::regex> res;
+  for (const char* p : patterns) {
+    res.emplace_back(p, std::regex::ECMAScript | std::regex::icase);
   }
-  for (const auto& segment : it->second.segments()) {
-    auto data = segment.data();
-    std::print("{}", std::string_view(reinterpret_cast<const char*>(data.data()), data.size()));
+
+  for (const auto& [name, entry] : entries) {
+    bool match = false;
+    for (size_t i = 0; i < patterns.size(); ++i) {
+      if (name == patterns[i]) {
+        match = true;
+        break;
+      }
+      if (std::regex_search(name, res[i])) {
+        match = true;
+        break;
+      }
+    }
+
+    if (match) {
+      std::println("-- contents of {}", name);
+      for (const auto& segment : entry.segments()) {
+        auto data = segment.data();
+        std::print("{}", std::string_view(reinterpret_cast<const char*>(data.data()), data.size()));
+      }
+      matched_files++;
+    }
   }
+
+  std::println("-- {} files matched", matched_files);
   return 0;
 }
 
@@ -154,16 +179,11 @@ auto main(int argc, char** argv) -> int {
   first_file = optind;
 #endif
 
-  if (action == Action::View) {
-    if (argc - first_file != 2) {
-      std::println("Usage: unlzx -v archive filename");
-      return 2;
-    }
-  } else if (argc - first_file != 1) {
-    std::println("Usage: unlzx [-l][-x][-v] archive [filename]");
+  if (argc - first_file < 1) {
+    std::println("Usage: unlzx [-l][-x][-v] archive [file...]");
     std::println("\t-l : list archive");
     std::println("\t-x : extract (default)");
-    std::println("\t-v : view file in archive");
+    std::println("\t-v : view file(s) in archive");
     return 2;
   }
 
@@ -179,7 +199,7 @@ auto main(int argc, char** argv) -> int {
     if (action == Action::List) {
       return handle_list(unlzx);
     } else if (action == Action::View) {
-      return handle_view(unlzx, argv[first_file + 1]);
+      return handle_view(unlzx, std::span<char* const>(argv + first_file + 1, static_cast<size_t>(argc - (first_file + 1))));
     } else {
       return handle_extract(unlzx, argv[first_file]);
     }
