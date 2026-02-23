@@ -33,6 +33,8 @@ set(SOURCES
     src/huffman_decoder.cc
     src/huffman_table.cc
     src/lzx_block.cc
+    src/lzx_entry.cc
+    src/lzx_entry_builder.cc
     src/lzx_handle.cc
     src/mmap_buffer.cc
     src/unlzx.cc
@@ -43,6 +45,8 @@ set(HEADERS
     src/crc.hh
     src/huffman_decoder.hh
     src/lzx_block.hh
+    src/lzx_entry.hh
+    src/lzx_entry_builder.hh
     src/lzx_handle.hh
     src/mmap_buffer.hh
     src/types.hh

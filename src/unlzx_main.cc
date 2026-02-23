@@ -116,7 +116,7 @@ auto main(int argc, char** argv) -> int {
 
       for (const auto& [name, entry] : entries) {
         total_unpack += entry.unpack_size();
-        total_files  += entry.segments.size();
+        total_files  += entry.segments().size();
 
         std::print("{:8} ", entry.unpack_size());
         if (auto pack = entry.pack_size()) {

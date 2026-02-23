@@ -34,6 +34,7 @@
 #include "circular_buffer.hh"
 #include "crc.hh"
 #include "huffman_decoder.hh"
+#include "lzx_entry_builder.hh"
 #include "lzx_handle.hh"
 
 /* ---------------------------------------------------------------------- */
@@ -220,11 +221,16 @@ Status Unlzx::extract_archive() {
 /* ---------------------------------------------------------------------- */
 
 std::map<std::string, LzxEntry> Unlzx::list_archive() {
-  std::map<std::string, LzxEntry> entries;
+  std::map<std::string, LzxEntryBuilder> builders;
 
   std::unique_ptr<lzx::Entry> archive_header;
   size_t current_decompressed_offset = 0;
-  std::vector<std::string> current_merge_group;
+  struct PendingMerge {
+    std::string filename;
+    size_t      offset;
+    size_t      length;
+  };
+  std::vector<PendingMerge> pending_merges;
 
   while (!in_buffer_->is_eof()) {
     if (lzx::Entry::from_buffer(&*in_buffer_, archive_header) != Status::Ok) {
@@ -236,20 +242,11 @@ std::map<std::string, LzxEntry> Unlzx::list_archive() {
     bool        is_merged   = archive_header->flags().is_merged();
     uint32_t    unpack_size = archive_header->unpack_size();
 
-    auto& entry = entries[filename];
-    if (entry.name.empty()) {
-      entry.name     = filename;
-      entry.metadata = *archive_header;
-    }
+    auto [it, inserted] = builders.try_emplace(filename, *archive_header);
 
     if (is_merged) {
-      LzxFileSegment segment;
-      segment.decompressed_offset = current_decompressed_offset;
-      segment.decompressed_length = unpack_size;
-      entry.segments.push_back(segment);
-
+      pending_merges.push_back({filename, current_decompressed_offset, unpack_size});
       current_decompressed_offset += unpack_size;
-      current_merge_group.push_back(filename);
 
       if (pack_size > 0) {
         InputBuffer sub = *in_buffer_;
@@ -257,10 +254,10 @@ std::map<std::string, LzxEntry> Unlzx::list_archive() {
         sub.read_buffer(pack_size, block_data);
 
         auto shared_block = std::make_shared<LzxBlock>(std::move(*archive_header), block_data, current_decompressed_offset);
-        for (const auto& merged_filename : current_merge_group) {
-          entries[merged_filename].segments.back().block = shared_block;
+        for (const auto& pending : pending_merges) {
+          builders.at(pending.filename).add_segment(shared_block, pending.offset, pending.length);
         }
-        current_merge_group.clear();
+        pending_merges.clear();
         current_decompressed_offset = 0;
       }
     } else {
@@ -269,16 +266,17 @@ std::map<std::string, LzxEntry> Unlzx::list_archive() {
       sub.read_buffer(pack_size, block_data);
 
       auto shared_block = std::make_shared<LzxBlock>(std::move(*archive_header), block_data, unpack_size);
-      LzxFileSegment segment;
-      segment.decompressed_offset = 0;
-      segment.decompressed_length = unpack_size;
-      segment.block = shared_block;
-      entry.segments.push_back(segment);
+      builders.at(filename).add_segment(shared_block, 0, unpack_size);
     }
 
     if (in_buffer_->skip(pack_size) != Status::Ok) {
       break;
     }
+  }
+
+  std::map<std::string, LzxEntry> entries;
+  for (auto& [name, builder] : builders) {
+    entries.try_emplace(name, builder.build(name));
   }
 
   return entries;
