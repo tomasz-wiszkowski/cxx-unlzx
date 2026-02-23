@@ -160,12 +160,12 @@ Status HuffmanDecoder::read_literal_table(InputBuffer* source) {
 /* pretty damn optimized. */
 
 Status HuffmanDecoder::decrunch(
-    InputBuffer* source, CircularBuffer<uint8_t>* target, size_t threshold) {
+    InputBuffer* source, std::span<uint8_t> target, size_t& pos, size_t threshold) {
   uint32_t temp;
   uint32_t symbol;
   uint32_t count;
 
-  while (target->size() < threshold && (!source->is_eof())) {
+  while (pos < threshold && (!source->is_eof())) {
     uint16_t symbol_data;
     TRY(source->peek_bits(12, symbol_data));
     symbol = literals_.table_[symbol_data];
@@ -187,7 +187,8 @@ Status HuffmanDecoder::decrunch(
 
     // Direct byte to put in the decode buffer.
     if (symbol < 256) {
-      TRY(target->push(symbol));
+      if (pos >= target.size()) return Status::BufferOverflow;
+      target[pos++] = static_cast<uint8_t>(symbol);
       continue;
     }
 
@@ -221,7 +222,13 @@ Status HuffmanDecoder::decrunch(
     TRY(source->read_bits(temp, bits));
     count += bits;
 
-    TRY(target->repeat(last_offset_, count));
+    if (last_offset_ > pos) return Status::OutOfRange;
+    if (pos + count > target.size()) return Status::BufferOverflow;
+
+    size_t start_idx = pos - last_offset_;
+    for (size_t i = 0; i < count; ++i) {
+      target[pos++] = target[start_idx + i];
+    }
   }
   return Status::Ok;
 }

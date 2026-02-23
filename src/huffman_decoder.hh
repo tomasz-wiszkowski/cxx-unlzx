@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstdint>
+#include <span>
+#include <vector>
 
 #include "circular_buffer.hh"
 #include "error.hh"
@@ -13,7 +15,7 @@ class HuffmanDecoder {
  public:
   HuffmanDecoder();
   Status read_literal_table(InputBuffer* data);
-  Status decrunch(InputBuffer* data, CircularBuffer<uint8_t>* buffer, size_t max_decode_length);
+  Status decrunch(InputBuffer* data, std::span<uint8_t> target, size_t& pos, size_t threshold);
 
   uint32_t decrunch_length() const {
     return decrunch_length_;

@@ -5,6 +5,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -12,14 +13,9 @@
 #include "error.hh"
 #include "mmap_buffer.hh"
 #include "lzx_handle.hh"
+#include "lzx_block.hh"
 
 enum class Action : uint8_t { View, Extract };
-
-struct LzxBlock {
-  lzx::Entry node;
-  size_t offset;
-  size_t length;
-};
 
 struct LzxFileSegment {
   std::shared_ptr<LzxBlock> block;
@@ -33,14 +29,10 @@ struct LzxEntry {
   std::vector<LzxFileSegment> segments;
 
   std::optional<size_t> pack_size() const {
-    size_t total = 0;
-    for (const auto& segment : segments) {
-      if (!segment.block || segment.block->node.flags().is_merged()) {
-        return std::nullopt;
-      }
-      total += segment.block->length;
+    if (metadata.flags().is_merged()) {
+      return std::nullopt;
     }
-    return total;
+    return metadata.pack_size();
   }
 
   size_t unpack_size() const {

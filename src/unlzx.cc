@@ -80,7 +80,9 @@ Status Unlzx::extract_normal(InputBuffer in_file) {
   uint32_t                unpack_size     = 0;
   size_t                  decrunch_length = 0;
 
-  CircularBuffer<uint8_t> buffer(65536);
+  std::vector<uint8_t> buffer;
+  size_t pos = 0;
+  size_t consumed_pos = 0;
 
   while (!merged_files_.empty()) {
     auto node = std::move(merged_files_.front());
@@ -91,32 +93,42 @@ Status Unlzx::extract_normal(InputBuffer in_file) {
     crc::Crc32 crc_calc;
 
     unpack_size = node->unpack_size();
-    while (unpack_size > 0) {
-      if (buffer.is_empty()) {
+    size_t target_pos = pos + unpack_size;
+    if (buffer.size() < target_pos + 256) {
+      buffer.resize(target_pos + 256);
+    }
+
+    while (pos < target_pos) {
+      if (pos == consumed_pos) {
         if (decrunch_length <= 0) {
           TRY(decoder.read_literal_table(&in_file));
           decrunch_length = decoder.decrunch_length();
         }
 
-        TRY(decoder.decrunch(&in_file, &buffer, std::min(decrunch_length, size_t(65536 - 256))));
-        size_t have_bytes = std::min(decrunch_length, buffer.size());
-        decrunch_length -= have_bytes;
+        size_t next_threshold = std::min(pos + decrunch_length, target_pos);
+        size_t old_pos = pos;
+        TRY(decoder.decrunch(&in_file, buffer, pos, next_threshold));
+        
+        size_t decoded_bytes = pos - old_pos;
+        if (decoded_bytes > decrunch_length) {
+          decrunch_length = 0;
+        } else {
+          decrunch_length -= decoded_bytes;
+        }
       }
 
-      auto spans = buffer.read(unpack_size);
-      for (auto& span : spans) {
-        /* calculate amount of data we can use before we need to fill the buffer again */
-        size_t count = std::min(span.size(), size_t(unpack_size));
-
-        crc_calc.calc(span.data(), count);
+      size_t count = std::min(pos - consumed_pos, size_t(unpack_size));
+      if (count > 0) {
+        crc_calc.calc(&buffer[consumed_pos], count);
 
         if (out_file) {
-          if (fwrite(span.data(), 1, count, out_file.get()) != count) {
+          if (fwrite(&buffer[consumed_pos], 1, count, out_file.get()) != count) {
             return Status::FileWriteError;
           }
         }
 
         unpack_size -= count;
+        consumed_pos += count;
       }
     }
 
@@ -224,9 +236,6 @@ std::map<std::string, LzxEntry> Unlzx::list_archive() {
     bool        is_merged   = archive_header->flags().is_merged();
     uint32_t    unpack_size = archive_header->unpack_size();
 
-    size_t offset = 0;
-    in_buffer_->skip(0, offset);
-
     auto& entry = entries[filename];
     if (entry.name.empty()) {
       entry.name     = filename;
@@ -243,7 +252,11 @@ std::map<std::string, LzxEntry> Unlzx::list_archive() {
       current_merge_group.push_back(filename);
 
       if (pack_size > 0) {
-        auto shared_block = std::make_shared<LzxBlock>(LzxBlock{std::move(*archive_header), offset, pack_size});
+        InputBuffer sub = *in_buffer_;
+        InputBuffer block_data;
+        sub.read_buffer(pack_size, block_data);
+
+        auto shared_block = std::make_shared<LzxBlock>(std::move(*archive_header), block_data, current_decompressed_offset);
         for (const auto& merged_filename : current_merge_group) {
           entries[merged_filename].segments.back().block = shared_block;
         }
@@ -251,7 +264,11 @@ std::map<std::string, LzxEntry> Unlzx::list_archive() {
         current_decompressed_offset = 0;
       }
     } else {
-      auto shared_block = std::make_shared<LzxBlock>(LzxBlock{std::move(*archive_header), offset, pack_size});
+      InputBuffer sub = *in_buffer_;
+      InputBuffer block_data;
+      sub.read_buffer(pack_size, block_data);
+
+      auto shared_block = std::make_shared<LzxBlock>(std::move(*archive_header), block_data, unpack_size);
       LzxFileSegment segment;
       segment.decompressed_offset = 0;
       segment.decompressed_length = unpack_size;
