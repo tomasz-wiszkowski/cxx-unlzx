@@ -120,7 +120,7 @@ class CompressionInfo {
 
  private:
   Mode    mode_ : 5;  // Guessed.
-  uint8_t reserved_ : 3;
+  uint8_t       : 3;  // Reserved.
 
 } PACKED;
 static_assert(sizeof(CompressionInfo) == 1);
@@ -138,7 +138,7 @@ class Flags {
 
  private:
   uint8_t merged_ : 1;
-  uint8_t reserved_ : 7;
+  uint8_t         : 7;  // Reserved.
 
 } PACKED;
 static_assert(sizeof(CompressionInfo) == 1);

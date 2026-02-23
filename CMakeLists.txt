@@ -21,11 +21,12 @@ endif()
 # Specify the C++ standard
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-exceptions")
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-exceptions")
 
-# TODO: Remove after replacing fopen/fclose/...
-add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
+if(MSVC)
+    add_compile_options(/EHs- /EHc- /GR- /W4)
+else()
+    add_compile_options(-fno-exceptions -fno-rtti -Wall -Wextra)
+endif()
 
 set(SOURCES
     src/crc.cc

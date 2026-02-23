@@ -32,7 +32,6 @@ Status HuffmanTable::reset_table() {
   uint32_t position   = 0;
   uint32_t fill;
   uint32_t next_symbol;
-  uint32_t reversed_position;
 
   current_bit_length++;
 
@@ -40,7 +39,7 @@ Status HuffmanTable::reset_table() {
   // e.g. if `value` is 0bABCD and `table_bits_` is 3, then result will be 0bDCB.
   auto reverse_bits = [this](uint32_t value) {
     uint32_t leaf = 0;
-    for (int i = 0; i < table_bits_; i++) {
+    for (size_t i = 0; i < table_bits_; i++) {
       leaf = (leaf << 1) | ((value >> i) & 1);
     }
     return leaf;

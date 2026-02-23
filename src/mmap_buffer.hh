@@ -19,7 +19,7 @@ class InputBuffer {
    * @param data Pointer to the memory data.
    * @param size Size of the memory data in bytes.
    */
-  constexpr InputBuffer(const uint8_t* data, size_t size) : data_{data}, filesize_{size} {}
+  constexpr InputBuffer(const uint8_t* data, size_t size) : filesize_{size}, data_{data} {}
 
   /**
    * @brief Reads the requested number of bits into the output value.

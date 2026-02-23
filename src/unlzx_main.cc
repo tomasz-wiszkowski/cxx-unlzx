@@ -249,7 +249,7 @@ auto main(int argc, char** argv) -> int {
   first_file = optind;
 #endif
 
-  if (argc - first_file < 1) {
+  if (result != 0 || argc - first_file < 1) {
     std::println("Usage: unlzx [--regex] [-l][-x][-v] archive [file...]");
     std::println("\t--regex : treat file(s) as regex patterns (with -l, -v)");
     std::println("\t-l : list archive");
